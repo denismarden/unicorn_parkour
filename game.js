@@ -400,9 +400,9 @@ const PHASES = [
 // ⚙️  CONFIGURE AQUI após criar seu projeto Firebase:
 const FIREBASE_URL = 'https://unicornparkour-8f6a2-default-rtdb.firebaseio.com/';
 
-// 🔑  SHA-256 da sua senha de admin (padrão: "unicorn2024")
-// Gere o hash da SUA senha em: https://emn178.github.io/online-tools/sha256.html
-const ADMIN_PASSWORD_HASH = 'a5d4496f3bca1eb1dcbb91f6cd2e94c7d5b1a5fbfde4b10e5e29e3c65ecede6d';
+// 🔑 Senha de admin criptografada (SHA-256 de "unicorn2024")
+// Para trocar: gere o hash em https://emn178.github.io/online-tools/sha256.html
+const ADMIN_PASSWORD_HASH = '26af5e5ee7c44cc8968b492f8b5bb861a8758d8653ce82ecf790a5f896c004d1';
 
 // Detecta modo admin via URL (?admin=1)
 const _urlParams = new URLSearchParams(window.location.search);
@@ -796,13 +796,16 @@ const characters = [
     { id: 10, cost: 0, name: "Aqua", desc: "Desliza e flutua 20%.", gravityMult: 0.8, body: "#44aaff", mane: ["#0055ff", "#002288"], particle: "#00aaff" },
     { id: 11, cost: 0, name: "Guerreiro", desc: "Mestre em Combate.", body: "#880000", mane: ["#ff0000", "#550000"], particle: "#ff3333" },
     { id: 12, cost: 0, name: "Anjo", desc: "Pulo suave.", jumpPowerMult: 1.2, body: "#ffffee", mane: ["#ffffff", "#ffddaa"], particle: "#ffffff" },
-    { id: 13, cost: 0, name: "Demônio", desc: "Score 1.5x, cai rápido.", pointsMult: 1.5, gravityMult: 1.5, body: "#220000", mane: ["#ff0000", "#aa0000"], particle: "#ff0000" },
+    { id: 13, cost: 0, name: "Oni", desc: "Score 1.5x, cai rápido.", pointsMult: 1.5, gravityMult: 1.5, body: "#220000", mane: ["#ff0000", "#aa0000"], particle: "#ff0000" },
     { id: 14, cost: 0, name: "Tóxico", desc: "Ímã natural extremo.", magnetic: 150, body: "#00ff00", mane: ["#005500", "#002200"], particle: "#00aa00" },
     { id: 15, cost: 0, name: "Ninja", desc: "Pulo x5, pulos fracos.", maxJumps: 5, jumpPowerMult: 0.7, body: "#111111", mane: ["#333333", "#555555"], particle: "#555555" },
     { id: 16, cost: 0, name: "Robô", desc: "Pulo Foguete x2.", jumpPowerMult: 2.0, pointsMult: 0.8, body: "#88aaa0", mane: ["#555555", "#00ffff"], particle: "#00ffff" },
     { id: 17, cost: 0, name: "Cristal", desc: "Estrelas raras x2.5.", spawnRateMult: 2.5, body: "#aaddff", mane: ["#ffffff", "#55aaff"], particle: "#aaddff" },
     { id: 18, cost: 0, name: "Bardo", desc: "Powerups x2 tempo.", powerupDurMult: 2.0, body: "#ff55aa", mane: ["#ff0055", "#ffaaaa"], particle: "#ff55aa" },
-    { id: 19, cost: 0, name: "Rei", desc: "Maior chance e pontos.", pointsMult: 1.5, spawnRateMult: 1.5, maxJumps: 3, body: "#ffdd00", mane: ["#ffffff", "#ff8800"], particle: "#ffdd00" }
+    { id: 19, cost: 0, name: "Rei", desc: "Maior chance e pontos.", pointsMult: 1.5, spawnRateMult: 1.5, maxJumps: 3, body: "#ffdd00", mane: ["#ffffff", "#ff8800"], particle: "#ffdd00" },
+    { id: 20, cost: 0, name: "Dragão", desc: "Voa mais alto e veloz.", jumpPowerMult: 1.6, gravityMult: 0.7, maxJumps: 3, body: "#cc2200", mane: ["#ff6600", "#ffdd00"], particle: "#ff4400" },
+    { id: 21, cost: 0, name: "Gatinho", desc: "Pula 4x e cai suave.", maxJumps: 4, gravityMult: 0.6, body: "#ffaadd", mane: ["#ff66bb", "#ffffff"], particle: "#ff99cc" },
+    { id: 22, cost: 0, name: "Coelho", desc: "Pulo ultra-alto triplo.", jumpPowerMult: 1.8, maxJumps: 3, body: "#ffffff", mane: ["#ffccee", "#aaddff"], particle: "#ffffff" }
 ];
 let selectedChar = 0;
 
@@ -1326,6 +1329,522 @@ function createPlayerParticle() {
 // UNICORN VISUAL ENGINE v4 — Correct proportions
 // Physics, rig, hitbox: 100% UNCHANGED
 // ─────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────
+// DRAGON CHARACTER — Scaly, winged, fire-breathing beast
+// ─────────────────────────────────────────────────────────────────────────
+function drawDragon(ctx, p) {
+    ctx.save();
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    let yOffset = p.onGround ? Math.sin(frames * 0.8) * 2 : 0;
+    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
+    if (p.spin !== 0) rotation += p.spin;
+    ctx.rotate(rotation);
+    ctx.scale(p.scaleX, p.scaleY);
+    ctx.scale(p.w / 50, p.h / 40);
+    ctx.translate(0, yOffset);
+    ctx.scale(1.3, 1.3);
+
+    let runTime = p.onGround ? frames * 0.55 : 0;
+    let legFL = p.onGround ? Math.sin(runTime) * 30 : -25;
+    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 30 : 8;
+    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 30 : 28;
+    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 30 : -8;
+    let tailWave = Math.sin(frames * 0.3) * 12;
+    let wingFlap = isFlying ? Math.sin(frames * 0.6) * 22 : Math.sin(frames * 0.25) * 5;
+
+    const sc = ['#880800', '#cc2200', '#ff4400', '#ff8800', '#ffcc00'];
+    const body = sc[1], bodyL = sc[2], bodyD = sc[0], bodyLL = sc[3];
+
+    function scalyGrad(hx, hy, cx, cy, r) {
+        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+        g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.7, body); g.addColorStop(1, bodyD);
+        return g;
+    }
+
+    // TAIL — thick spiky dragon tail
+    ctx.fillStyle = scalyGrad(-30, 0, -18, 10, 28);
+    ctx.beginPath();
+    ctx.moveTo(-15, 8);
+    ctx.bezierCurveTo(-28, 2 + tailWave * 0.5, -52, 16 + tailWave, -48, 30 + tailWave);
+    ctx.bezierCurveTo(-44, 38 + tailWave, -30, 32 + tailWave * 0.7, -20, 22);
+    ctx.quadraticCurveTo(-16, 14, -15, 8);
+    ctx.fill();
+    // Tail spines
+    ctx.fillStyle = sc[4];
+    for (let i = 0; i < 4; i++) {
+        let tx = -22 - i * 7 + tailWave * 0.1 * i;
+        let ty = 12 + i * 4 + tailWave * 0.2 * i;
+        ctx.beginPath();
+        ctx.moveTo(tx - 2, ty + 2);
+        ctx.lineTo(tx, ty - 7 - i);
+        ctx.lineTo(tx + 2, ty + 1);
+        ctx.closePath(); ctx.fill();
+    }
+
+    // REAR LEGS (behind body)
+    ctx.globalAlpha = 0.65;
+    function drawDragonLeg(lx, ly, angle, col) {
+        ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
+        let lg = ctx.createRadialGradient(-4, 6, 0, 0, 12, 12);
+        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+        ctx.fillStyle = lg;
+        ctx.beginPath(); ctx.ellipse(0, 8, 5, 10, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = bodyD;
+        ctx.beginPath(); ctx.ellipse(0, 18, 4, 8, 0.1, 0, Math.PI * 2); ctx.fill();
+        // Claw
+        ctx.fillStyle = '#ffeeaa';
+        [-3, 0, 3].forEach(dx => {
+            ctx.beginPath(); ctx.moveTo(dx, 24); ctx.lineTo(dx - 2, 30); ctx.lineTo(dx + 2, 30); ctx.closePath(); ctx.fill();
+        });
+        ctx.restore();
+    }
+    drawDragonLeg(-10, 12, legBR, bodyD);
+    drawDragonLeg(9, 12, legFR, bodyD);
+    ctx.globalAlpha = 1.0;
+
+    // BODY — wide barrel, scaly
+    ctx.fillStyle = scalyGrad(-12, -6, -8, 6, 20);
+    ctx.beginPath(); ctx.ellipse(-10, 6, 14, 12, 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = scalyGrad(-2, -14, 2, 4, 25);
+    ctx.beginPath(); ctx.ellipse(2, 4, 20, 16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = scalyGrad(12, -14, 14, -2, 16);
+    ctx.beginPath(); ctx.ellipse(14, -3, 12, 10, -0.3, 0, Math.PI * 2); ctx.fill();
+
+    // Belly — lighter scales
+    let bellyG = ctx.createLinearGradient(-10, 8, 10, 22);
+    bellyG.addColorStop(0, '#ff6633'); bellyG.addColorStop(1, '#ff9966');
+    ctx.fillStyle = bellyG;
+    ctx.beginPath(); ctx.ellipse(3, 16, 12, 6, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Back spines
+    ctx.fillStyle = sc[4];
+    [[-14, -12], [-6, -18], [2, -20], [10, -16]].forEach(([sx, sy], i) => {
+        ctx.beginPath();
+        ctx.moveTo(sx - 3, sy + 4);
+        ctx.lineTo(sx, sy - 8 - i * 2);
+        ctx.lineTo(sx + 3, sy + 4);
+        ctx.closePath(); ctx.fill();
+    });
+
+    // WINGS
+    ctx.save();
+    ctx.globalAlpha = 0.88;
+    // Back wing (darker)
+    ctx.fillStyle = '#770000';
+    ctx.beginPath();
+    ctx.moveTo(-4, -6);
+    ctx.bezierCurveTo(-14, -28 + wingFlap, -38, -36 + wingFlap, -40, -20 + wingFlap);
+    ctx.bezierCurveTo(-34, -10 + wingFlap, -18, -2 + wingFlap, -6, 2);
+    ctx.closePath(); ctx.fill();
+    // Membrane webbing
+    ctx.strokeStyle = '#550000'; ctx.lineWidth = 0.8;
+    [-22, -30, -36].forEach(wx => {
+        ctx.beginPath();
+        ctx.moveTo(-4, -6);
+        ctx.lineTo(wx, -28 + wingFlap);
+        ctx.stroke();
+    });
+    // Front wing (brighter)
+    ctx.fillStyle = '#aa1100';
+    ctx.beginPath();
+    ctx.moveTo(-2, -8);
+    ctx.bezierCurveTo(-8, -22 + wingFlap * 0.7, -28, -28 + wingFlap * 0.7, -30, -16 + wingFlap * 0.7);
+    ctx.bezierCurveTo(-24, -8 + wingFlap * 0.7, -12, -2, -4, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // HEAD
+    ctx.save();
+    ctx.translate(14, -12 + (p.onGround ? Math.sin(frames * 0.8) * 1 : 0));
+    // Neck
+    let nkG = ctx.createLinearGradient(-8, 12, 4, -12);
+    nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
+    ctx.fillStyle = nkG;
+    ctx.beginPath();
+    ctx.moveTo(-8, 12); ctx.quadraticCurveTo(-12, 2, -10, -4);
+    ctx.lineTo(-1, -14); ctx.quadraticCurveTo(5, -6, 5, 2); ctx.lineTo(3, 12);
+    ctx.closePath(); ctx.fill();
+    // Skull — elongated draconic
+    ctx.fillStyle = scalyGrad(-2, -12, 2, -4, 16);
+    ctx.beginPath(); ctx.ellipse(2, -5, 13, 10, -0.1, 0, Math.PI * 2); ctx.fill();
+    // Snout — long reptile jaw
+    ctx.fillStyle = scalyGrad(8, -6, 14, 0, 13);
+    ctx.beginPath(); ctx.ellipse(14, -1, 10, 6, 0.15, 0, Math.PI * 2); ctx.fill();
+    // Nostrils with smoke
+    ctx.fillStyle = '#220000';
+    ctx.beginPath(); ctx.ellipse(19, 1, 2, 1.5, 0.3, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = 'rgba(255,120,0,0.4)';
+    ctx.beginPath(); ctx.arc(20, -1, 2.5, 0, Math.PI * 2); ctx.fill();
+    // Horns
+    [[2, -14, -4, -26], [8, -12, 6, -25]].forEach(([bx, by, tx, ty]) => {
+        let hg = ctx.createLinearGradient(bx, by, tx, ty);
+        hg.addColorStop(0, bodyL); hg.addColorStop(1, '#ffdd00');
+        ctx.fillStyle = hg;
+        ctx.beginPath();
+        ctx.moveTo(bx - 2, by); ctx.lineTo(tx, ty); ctx.lineTo(bx + 3, by);
+        ctx.closePath(); ctx.fill();
+    });
+    // Ear fin
+    ctx.fillStyle = '#880800';
+    ctx.beginPath(); ctx.moveTo(-1, -13); ctx.lineTo(-6, -24); ctx.lineTo(4, -18); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff4400';
+    ctx.beginPath(); ctx.moveTo(-1, -14); ctx.lineTo(-4, -22); ctx.lineTo(2, -17); ctx.closePath(); ctx.fill();
+    // Eye — reptile slit pupil
+    ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.ellipse(6, -7, 5.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#222200';
+    ctx.beginPath(); ctx.ellipse(6.5, -7, 1.5, 3.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath(); ctx.ellipse(5, -8.5, 1.4, 1, -0.4, 0, Math.PI * 2); ctx.fill();
+    // Fire breath (periodic)
+    if (frames % 120 < 30) {
+        let fireAmt = (frames % 120) / 30;
+        ctx.save();
+        ctx.globalAlpha = fireAmt * 0.8;
+        ['#ffff00', '#ffaa00', '#ff4400'].forEach((fc, fi) => {
+            ctx.fillStyle = fc;
+            ctx.beginPath();
+            ctx.ellipse(22 + fi * 5 + fireAmt * 15, -1 + Math.sin(frames * 0.4 + fi) * 3,
+                (4 - fi) * fireAmt, (3 - fi) * fireAmt, 0, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+    }
+    ctx.restore(); // end head
+    // FRONT LEGS
+    drawDragonLeg(-9, 12, legBL, body);
+    drawDragonLeg(12, 12, legFL, body);
+    ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CAT CHARACTER — Fluffy, big-eyed, with animated whiskers and ears
+// ─────────────────────────────────────────────────────────────────────────
+function drawCat(ctx, p) {
+    ctx.save();
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    let yOffset = p.onGround ? Math.sin(frames * 0.8) * 2 : 0;
+    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
+    if (p.spin !== 0) rotation += p.spin;
+    ctx.rotate(rotation);
+    ctx.scale(p.scaleX, p.scaleY);
+    ctx.scale(p.w / 50, p.h / 40);
+    ctx.translate(0, yOffset);
+    ctx.scale(1.3, 1.3);
+
+    let runTime = p.onGround ? frames * 0.65 : 0;
+    let legFL = p.onGround ? Math.sin(runTime) * 32 : -28;
+    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 32 : 9;
+    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 32 : 30;
+    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 32 : -9;
+    let tailWave = Math.sin(frames * 0.35) * 14;
+    let tailTip = Math.sin(frames * 0.55) * 10;
+    let isBlinking = frames % 160 < 8;
+    let isSmiling = !p.onGround || isFlying || score > 500;
+
+    const body = '#ffaadd', bodyL = '#ffd0ee', bodyD = '#dd77bb', bodyLL = '#fff0f8';
+
+    function catGrad(hx, hy, cx, cy, r) {
+        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+        g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.75, body); g.addColorStop(1, bodyD);
+        return g;
+    }
+
+    function drawCatLeg(lx, ly, angle) {
+        ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
+        let lg = ctx.createRadialGradient(-3, 5, 0, 0, 11, 11);
+        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+        ctx.fillStyle = lg;
+        ctx.beginPath(); ctx.ellipse(0, 8, 5, 10, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = bodyD;
+        ctx.beginPath(); ctx.ellipse(0, 18, 4.5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        // Paw with toe beans
+        ctx.fillStyle = body;
+        ctx.beginPath(); ctx.ellipse(0, 25, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffbbdd';
+        [-3, 0, 3].forEach(dx => { ctx.beginPath(); ctx.arc(dx, 25, 1.5, 0, Math.PI * 2); ctx.fill(); });
+        ctx.restore();
+    }
+
+    // BIG CAT TAIL — curls up dramatically
+    ctx.fillStyle = catGrad(-36, -8, -22, 10, 24);
+    ctx.beginPath();
+    ctx.moveTo(-15, 8);
+    ctx.bezierCurveTo(-30, 2 + tailWave * 0.5, -50, 12 + tailWave, -44, 28 + tailWave);
+    ctx.bezierCurveTo(-40, 38 + tailWave, -26, 34 + tailWave * 0.7, -18, 20);
+    ctx.quadraticCurveTo(-15, 12, -15, 8);
+    ctx.fill();
+    // Tail floof tip
+    ctx.fillStyle = bodyLL;
+    ctx.beginPath(); ctx.ellipse(-44, 28 + tailWave, 7, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    // REAR LEGS
+    ctx.globalAlpha = 0.65;
+    drawCatLeg(-10, 12, legBR);
+    drawCatLeg(9, 12, legFR);
+    ctx.globalAlpha = 1.0;
+
+    // BODY — round fluffy
+    ctx.fillStyle = catGrad(-14, -6, -10, 6, 18);
+    ctx.beginPath(); ctx.ellipse(-10, 6, 14, 13, 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = catGrad(-3, -14, 1, 4, 25);
+    ctx.beginPath(); ctx.ellipse(1, 4, 22, 17, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = catGrad(12, -14, 14, -3, 17);
+    ctx.beginPath(); ctx.ellipse(13, -4, 12, 11, -0.3, 0, Math.PI * 2); ctx.fill();
+    // Fluffy belly tuff
+    let bG = ctx.createRadialGradient(4, 14, 0, 4, 16, 14);
+    bG.addColorStop(0, bodyLL); bG.addColorStop(1, body);
+    ctx.fillStyle = bG;
+    ctx.beginPath(); ctx.ellipse(4, 16, 10, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // Dorsal rim light
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-14, -10); ctx.quadraticCurveTo(-1, -20, 14, -13); ctx.stroke(); ctx.restore();
+
+    // HEAD
+    ctx.save();
+    ctx.translate(14, -12 + (p.onGround ? Math.sin(frames * 0.8) * 1.5 : 0));
+    // Neck
+    let nkG = ctx.createLinearGradient(-9, 12, 4, -12);
+    nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
+    ctx.fillStyle = nkG;
+    ctx.beginPath();
+    ctx.moveTo(-8, 12); ctx.quadraticCurveTo(-13, 2, -11, -4);
+    ctx.lineTo(-2, -15); ctx.quadraticCurveTo(5, -7, 5, 2); ctx.lineTo(4, 12);
+    ctx.closePath(); ctx.fill();
+    // Cranium — very round cat head
+    ctx.fillStyle = catGrad(-4, -14, 1, -5, 18);
+    ctx.beginPath(); ctx.ellipse(1, -5, 15, 14, -0.08, 0, Math.PI * 2); ctx.fill();
+    // Face fluff
+    let fG = ctx.createRadialGradient(10, 2, 0, 10, 2, 12);
+    fG.addColorStop(0, bodyLL); fG.addColorStop(1, body);
+    ctx.fillStyle = fG;
+    ctx.beginPath(); ctx.ellipse(10, 2, 10, 8, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Round muzzle / nose area
+    ctx.fillStyle = catGrad(9, -3, 14, 0, 10);
+    ctx.beginPath(); ctx.ellipse(13, -1, 8, 6, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Little pink nose
+    ctx.fillStyle = '#ff88bb'; ctx.shadowColor = '#ff44aa'; ctx.shadowBlur = 5;
+    ctx.beginPath(); ctx.moveTo(17, -1); ctx.lineTo(15, 2); ctx.lineTo(19, 2); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    // POINTY CAT EARS
+    [[-7, -18, -12, -30, -4, -22], [5, -17, 2, -29, 11, -21]].forEach(([bx1, by1, tx, ty, bx2, by2]) => {
+        ctx.fillStyle = catGrad(tx, ty, tx, ty - 4, 14);
+        ctx.beginPath(); ctx.moveTo(bx1, by1); ctx.lineTo(tx, ty); ctx.lineTo(bx2, by2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ff88bb';
+        ctx.beginPath(); ctx.moveTo(bx1 + 1, by1); ctx.lineTo(tx, ty + 3); ctx.lineTo(bx2 - 1, by2); ctx.closePath(); ctx.fill();
+    });
+    // EYES — huge Sanrio-style
+    if (isBlinking) {
+        ctx.strokeStyle = '#550033'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(1, -8); ctx.quadraticCurveTo(6, -4, 11, -8); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,100,160,0.35)';
+        ctx.beginPath(); ctx.ellipse(12, -3, 4, 2.5, 0.2, 0, Math.PI * 2); ctx.fill();
+    } else {
+        // Left eye
+        ctx.fillStyle = '#fafafa';
+        ctx.beginPath(); ctx.ellipse(5.5, -8, 5.5, 5.5, -0.05, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#4424cc';
+        ctx.beginPath(); ctx.ellipse(5.8, -8, 3.8, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#110a33';
+        ctx.beginPath(); ctx.ellipse(6.2, -8.2, 2.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.ellipse(4.5, -10, 1.7, 1.4, -0.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(8, -6.5, 0.9, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#550033'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.ellipse(5.5, -8, 5.5, 5.5, -0.05, 0, Math.PI * 2); ctx.stroke();
+        // Eyelash
+        ctx.strokeStyle = '#550033'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0.5, -12.5); ctx.quadraticCurveTo(5.5, -15.5, 11, -12.5); ctx.stroke();
+        // Blush
+        ctx.fillStyle = 'rgba(255,100,160,0.32)';
+        ctx.beginPath(); ctx.ellipse(13, -3, 4.5, 2.8, 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+    // MOUTH
+    if (isSmiling) {
+        ctx.strokeStyle = '#aa4466'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(13, 3); ctx.quadraticCurveTo(15, 6, 20, 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(17, 2); ctx.quadraticCurveTo(18, 5, 22, 1); ctx.stroke();
+    }
+    // WHISKERS
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+    let wWave = Math.sin(frames * 0.2) * 1.5;
+    [[-2, 1.5], [1, 3.5], [-1, 5.5]].forEach(([wy, wa]) => {
+        ctx.beginPath(); ctx.moveTo(9, wy + wWave); ctx.lineTo(22, wy - wa + wWave); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(9, wy + wWave); ctx.lineTo(-2, wy - wa + wWave); ctx.stroke();
+    });
+    ctx.restore();
+    ctx.restore(); // end head
+    // FRONT LEGS
+    drawCatLeg(-9, 12, legBL);
+    drawCatLeg(12, 12, legFL);
+    ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// RABBIT CHARACTER — Long ears, stocky body, bouncy movement
+// ─────────────────────────────────────────────────────────────────────────
+function drawRabbit(ctx, p) {
+    ctx.save();
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    let yOffset = p.onGround ? Math.sin(frames * 0.9) * 2 : 0;
+    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.03 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
+    if (p.spin !== 0) rotation += p.spin;
+    ctx.rotate(rotation);
+    ctx.scale(p.scaleX, p.scaleY);
+    ctx.scale(p.w / 50, p.h / 40);
+    ctx.translate(0, yOffset);
+    ctx.scale(1.3, 1.3);
+
+    let runTime = p.onGround ? frames * 0.7 : 0;
+    let legFL = p.onGround ? Math.sin(runTime) * 36 : -30;
+    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 36 : 10;
+    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 36 : 34;
+    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 36 : -10;
+    let earWave = Math.sin(frames * 0.28) * 6 + (p.onGround ? 0 : Math.sin(frames * 0.7) * 12);
+    let isBlinking = frames % 140 < 8;
+    let isSmiling = !p.onGround || isFlying || score > 300;
+
+    const body = '#f4f4f4', bodyL = '#ffffff', bodyD = '#cccccc', bodyDeep = '#aaaaaa';
+    const accent = '#ffbbcc'; // pink accents
+
+    function rabbitGrad(hx, hy, cx, cy, r) {
+        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+        g.addColorStop(0, bodyL); g.addColorStop(0.4, body); g.addColorStop(0.75, bodyD); g.addColorStop(1, bodyDeep);
+        return g;
+    }
+
+    function drawRabbitLeg(lx, ly, angle, isFront) {
+        ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
+        let lg = ctx.createRadialGradient(-4, 5, 0, 0, 12, 14);
+        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+        ctx.fillStyle = lg;
+        // Rabbits have big chunky hind legs
+        let ew = isFront ? 5 : 7, eh = isFront ? 10 : 13;
+        ctx.beginPath(); ctx.ellipse(0, eh * 0.7, ew, eh, 0, 0, Math.PI * 2); ctx.fill();
+        // Big round paw
+        ctx.fillStyle = bodyD;
+        ctx.beginPath(); ctx.ellipse(isFront ? 0 : 2, eh * 1.4 + 4, isFront ? 4 : 6, isFront ? 3 : 4.5, 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    }
+
+    // FLUFFY TAIL
+    ctx.fillStyle = rabbitGrad(-38, -6, -28, 8, 16);
+    ctx.beginPath(); ctx.arc(-28, 9, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = bodyL;
+    ctx.beginPath(); ctx.arc(-28, 8, 7, 0, Math.PI * 2); ctx.fill();
+
+    // REAR LEGS
+    ctx.globalAlpha = 0.65;
+    drawRabbitLeg(-10, 14, legBR, false);
+    drawRabbitLeg(10, 14, legFR, false);
+    ctx.globalAlpha = 1.0;
+
+    // BODY — very round, chubby
+    ctx.fillStyle = rabbitGrad(-14, -6, -10, 7, 18);
+    ctx.beginPath(); ctx.ellipse(-10, 7, 14, 14, 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = rabbitGrad(-2, -16, 1, 5, 27);
+    ctx.beginPath(); ctx.ellipse(1, 5, 23, 18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = rabbitGrad(12, -15, 14, -3, 17);
+    ctx.beginPath(); ctx.ellipse(14, -4, 12, 11, -0.3, 0, Math.PI * 2); ctx.fill();
+    // Soft belly
+    let bG2 = ctx.createRadialGradient(4, 14, 0, 4, 14, 16);
+    bG2.addColorStop(0, '#fff8f0'); bG2.addColorStop(1, body);
+    ctx.fillStyle = bG2;
+    ctx.beginPath(); ctx.ellipse(4, 15, 12, 8, 0, 0, Math.PI * 2); ctx.fill();
+    // Rim light
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-13, -11); ctx.quadraticCurveTo(-1, -22, 14, -14); ctx.stroke(); ctx.restore();
+
+    // HEAD
+    ctx.save();
+    ctx.translate(14, -13 + (p.onGround ? Math.sin(frames * 0.8) * 1.5 : 0));
+    // Neck
+    let nkG = ctx.createLinearGradient(-9, 14, 4, -12);
+    nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
+    ctx.fillStyle = nkG;
+    ctx.beginPath();
+    ctx.moveTo(-8, 12); ctx.quadraticCurveTo(-13, 2, -11, -4);
+    ctx.lineTo(-2, -15); ctx.quadraticCurveTo(5, -7, 5, 2); ctx.lineTo(4, 12);
+    ctx.closePath(); ctx.fill();
+
+    // BIG EARS — rabbit's signature feature
+    // Inner pink part
+    const earPairs = [[-3, -26, -10, earWave], [5, -25, 4, earWave * 0.7]];
+    earPairs.forEach(([ex, ey, tiltX, tw], i) => {
+        // Outer ear
+        let earG = ctx.createLinearGradient(ex + tiltX, ey, ex + tiltX, ey - 22);
+        earG.addColorStop(0, bodyD); earG.addColorStop(1, bodyL);
+        ctx.fillStyle = earG;
+        ctx.beginPath();
+        ctx.ellipse(ex + tiltX, ey - 10 + tw, 6, 18, 0.1 * (i === 0 ? -1 : 1), 0, Math.PI * 2);
+        ctx.fill();
+        // Inner ear pink
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.ellipse(ex + tiltX, ey - 10 + tw, 3, 13, 0.1 * (i === 0 ? -1 : 1), 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // BIG ROUND HEAD
+    ctx.fillStyle = rabbitGrad(-3, -14, 1, -5, 18);
+    ctx.beginPath(); ctx.ellipse(1, -5, 14.5, 13, -0.08, 0, Math.PI * 2); ctx.fill();
+    // Chubby cheeks
+    ctx.fillStyle = rabbitGrad(9, -2, 14, 1, 12);
+    ctx.beginPath(); ctx.ellipse(13, 1, 9, 7.5, 0.12, 0, Math.PI * 2); ctx.fill();
+    // Cute nose — big round pink
+    ctx.fillStyle = '#ff99bb'; ctx.shadowColor = '#ff66aa'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.ellipse(17, 1, 3.5, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // Nose line
+    ctx.strokeStyle = '#cc4466'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(17, 3); ctx.lineTo(17, 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(17, 6); ctx.lineTo(14, 9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(17, 6); ctx.lineTo(20, 9); ctx.stroke();
+    // EYES — large innocent eyes
+    if (isBlinking) {
+        ctx.strokeStyle = '#220011'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(1, -8); ctx.quadraticCurveTo(6, -4.5, 11, -8); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,150,180,0.32)';
+        ctx.beginPath(); ctx.ellipse(12, -3, 4.5, 2.5, 0.3, 0, Math.PI * 2); ctx.fill();
+    } else {
+        ctx.fillStyle = '#f8f8f8';
+        ctx.beginPath(); ctx.ellipse(5.5, -8, 5.5, 5.5, -0.05, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#880033';
+        ctx.beginPath(); ctx.ellipse(5.8, -8, 3.8, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#1a0005';
+        ctx.beginPath(); ctx.ellipse(6.2, -8.2, 2.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.ellipse(4.4, -10, 1.8, 1.4, -0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(8, -6, 0.9, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#330011'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.ellipse(5.5, -8, 5.5, 5.5, -0.05, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#330011'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0, -12.5); ctx.quadraticCurveTo(5.5, -15.5, 11, -12.5); ctx.stroke();
+        // Blush
+        ctx.fillStyle = 'rgba(255,100,140,0.3)';
+        ctx.beginPath(); ctx.ellipse(13, -3, 4.5, 2.8, 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+    // MOUTH — cute W mouth
+    if (isSmiling) {
+        ctx.strokeStyle = '#441122'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(13, 4); ctx.quadraticCurveTo(15, 7, 17, 4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(17, 4); ctx.quadraticCurveTo(19, 7, 21, 4); ctx.stroke();
+    }
+    // WHISKERS
+    ctx.save(); ctx.strokeStyle = 'rgba(200,200,200,0.9)'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+    let ww = Math.sin(frames * 0.18) * 1.5;
+    [[0, 1], [2, 3.5], [4, 5.5]].forEach(([wy, wa]) => {
+        ctx.beginPath(); ctx.moveTo(9, wy + ww); ctx.lineTo(22, wy - wa + ww); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(9, wy + ww); ctx.lineTo(-2, wy - wa + ww); ctx.stroke();
+    });
+    ctx.restore();
+    ctx.restore(); // end head
+    // FRONT LEGS
+    drawRabbitLeg(-9, 13, legBL, true);
+    drawRabbitLeg(12, 13, legFL, true);
+    ctx.restore();
+}
+
 
 function shadeLighter(col, amount) {
     if (!col || col.startsWith('rgba') || col.startsWith('rgb')) return col || '#fff';
@@ -2638,7 +3157,10 @@ function render() {
     }
 
     // Player and Shield
-    drawUnicorn(ctx, player);
+    if (player.char.id === 20) { drawDragon(ctx, player); }
+    else if (player.char.id === 21) { drawCat(ctx, player); }
+    else if (player.char.id === 22) { drawRabbit(ctx, player); }
+    else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
 
     // ── PHASE BANNER ──
