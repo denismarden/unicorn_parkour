@@ -926,7 +926,6 @@ function initGame() {
     btnMenuGo.classList.remove('hidden');
     
     hud.classList.remove('hidden');
-    inputOverlay.style.display = 'block';
 
     // Show mobile controls on touch devices
     if (isTouchDevice()) {
@@ -1150,40 +1149,42 @@ function doMobilePause() {
     }
 }
 
-// Wire up mobile buttons (both touch and mouse for emulators)
-['touchstart', 'mousedown'].forEach(evType => {
-    mobileJumpBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); jump(); }, {passive: false});
-    mobileDashBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobileDash(); }, {passive: false});
-    mobileSlamBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobileSlam(); }, {passive: false});
-    mobilePauseBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobilePause(); }, {passive: false});
-});
+// Wire up mobile buttons — use 'click' for broad compatibility
+// 'touchstart' listener added separately with passive:false to allow preventDefault
+mobileJumpBtn.addEventListener('touchstart',  (e) => { e.preventDefault(); jump(); },         {passive: false});
+mobileDashBtn.addEventListener('touchstart',  (e) => { e.preventDefault(); doMobileDash(); }, {passive: false});
+mobileSlamBtn.addEventListener('touchstart',  (e) => { e.preventDefault(); doMobileSlam(); }, {passive: false});
+mobilePauseBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doMobilePause(); },{passive: false});
+
+// Also 'click' for desktop emulation / accessibility
+mobileJumpBtn.addEventListener('click',  jump);
+mobileDashBtn.addEventListener('click',  doMobileDash);
+mobileSlamBtn.addEventListener('click',  doMobileSlam);
+mobilePauseBtn.addEventListener('click', doMobilePause);
 
 // Visual feedback: button press animation
 [mobileJumpBtn, mobileDashBtn, mobileSlamBtn].forEach(btn => {
-    btn.addEventListener('touchstart', () => { btn.style.transform = 'scale(0.88)'; btn.style.opacity = '0.75'; }, {passive: true});
-    ['touchend', 'touchcancel', 'mouseup'].forEach(ev =>
-        btn.addEventListener(ev, () => { btn.style.transform = 'scale(1)'; btn.style.opacity = '1'; }, {passive: true})
+    btn.addEventListener('touchstart', () => { btn.style.transform = 'scale(0.88)'; btn.style.opacity = '0.7'; }, {passive: true});
+    ['touchend', 'touchcancel'].forEach(ev =>
+        btn.addEventListener(ev, () => { btn.style.transform = ''; btn.style.opacity = ''; }, {passive: true})
     );
 });
 
-// Fallback: tapping the canvas still works on touch (for tablets, etc.)
-inputOverlay.addEventListener('touchstart', (e) => {
-    // Only used if somehow a touch lands outside the buttons
-    if (state === 'playing' && !isPaused) {
-        let touch = e.touches[0];
-        // Ignore if the touch target is one of the mobile buttons
-        if (touch.target && touch.target.closest && touch.target.closest('#mobile-controls')) return;
-        // Simple fallback: tap anywhere = jump
-        jump();
-    }
+// ─── Fallback touch/click on the game area (everything that is NOT a button) ───
+// Listen on document so the whole screen becomes the jump zone.
+// Events that originate from inside #mobile-controls are ignored here.
+document.addEventListener('touchstart', (e) => {
+    if (state !== 'playing' || isPaused) return;
+    if (e.target.closest && e.target.closest('#mobile-controls')) return; // button handled it
+    jump();
     e.preventDefault();
 }, {passive: false});
 
-inputOverlay.addEventListener('mousedown', (e) => {
-    if (state === 'playing' && !isPaused) {
-        jump();
-    }
-    e.preventDefault();
+document.addEventListener('mousedown', (e) => {
+    if (state !== 'playing' || isPaused) return;
+    if (e.target.closest && e.target.closest('#mobile-controls')) return;
+    if (e.target.closest && e.target.closest('.ui-panel')) return; // ignore menus
+    jump();
 });
 
 function createPlayerParticle() {
@@ -2308,7 +2309,6 @@ function update() {
             state = 'gameover';
             gameOverMenu.classList.remove('hidden');
             hud.classList.add('hidden');
-            inputOverlay.style.display = 'none';
             mobileControls.style.display = 'none';
             finalScore.innerText = Math.floor(score);
             finalStars.innerText = starsCollected;
