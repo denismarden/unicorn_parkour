@@ -12,9 +12,24 @@ const bgCtx = bgCanvas.getContext('2d');
 
 let cw, ch;
 
+// Detect touch device — show mobile controls only on touch screens
+const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
 function resize() {
-    cw = canvas.width = bgCanvas.width = window.innerWidth;
-    ch = canvas.height = bgCanvas.height = window.innerHeight;
+    if (isTouchDevice()) {
+        // Melhora a visão no celular usando o aspecto padronizado de um S24 Plus
+        let isPortrait = window.innerHeight > window.innerWidth;
+        if (isPortrait) {
+            cw = canvas.width = bgCanvas.width = 1080;
+            ch = canvas.height = bgCanvas.height = 2340;
+        } else {
+            cw = canvas.width = bgCanvas.width = 2340;
+            ch = canvas.height = bgCanvas.height = 1080;
+        }
+    } else {
+        cw = canvas.width = bgCanvas.width = window.innerWidth;
+        ch = canvas.height = bgCanvas.height = window.innerHeight;
+    }
 }
 window.addEventListener('resize', resize);
 resize();
@@ -81,8 +96,7 @@ const mobileDashBtn = document.getElementById('mobile-dash');
 const mobileSlamBtn = document.getElementById('mobile-slam');
 const mobilePauseBtn = document.getElementById('mobile-pause');
 
-// Detect touch device — show mobile controls only on touch screens
-const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+// Detect touch device moved to the top
 
 const btnMute = document.getElementById('btn-mute');
 const globalStarsDisplay = document.getElementById('global-stars-display');
