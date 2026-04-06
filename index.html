@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Unicorn Parkour Adventure</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Background Canvas for generic stars/parallax -->
+        <canvas id="bg-canvas"></canvas>
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Toast Container -->
+        <div id="toast-container" style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; pointer-events: none; display: flex; flex-direction: column; gap: 10px;"></div>
+
+        <!-- Main Menu -->
+        <div id="main-menu" class="ui-panel">
+            <button id="btn-mute" class="btn secondary" style="position:absolute; top:10px; right:10px; font-size:1rem; padding:5px 10px;">🔊</button>
+            <h1 class="title">Unicorn Parkour</h1>
+            <p class="subtitle">Salte, desvie e colete estrelas!</p>
+            <div style="font-size:1.2rem; margin-bottom:15px; color:#ffdd00; font-weight:bold; text-shadow:0 0 10px #ffdd00;">
+                🌟 Estrelas: <span id="global-stars-display">0</span>
+            </div>
+            <button id="btn-start" class="btn primary">Jogar Agora</button>
+            <button id="btn-characters" class="btn secondary">Loja & Personagens</button>
+            <button id="btn-leaderboard" class="btn secondary">Placar de Líderes</button>
+            
+            <div id="missions-panel" style="background:rgba(0,0,0,0.5); border: 1px solid #3366cc; padding:10px; border-radius:8px; margin-top:20px; text-align:left;">
+                <h3 style="margin:0 0 5px 0; color:#00f0ff; font-size:1.1rem; text-align:center;">🎯 Missão Diária</h3>
+                <div id="mission-desc" style="font-size:0.9rem; text-align:center;">---</div>
+                <div style="background:#222; border-radius:4px; height:12px; margin-top:8px; overflow:hidden; border: 1px solid #444;">
+                    <div id="mission-progress-bar" style="background:linear-gradient(90deg, #00f0ff, #00ff88); height:100%; width:0%; transition: width 0.3s;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:0.8rem;">
+                    <span id="mission-progress-text">0 / 0</span>
+                    <span id="mission-reward" style="color:#ffdd00; font-weight:bold;">🎁 +0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Character / Shop Menu -->
+        <div id="character-menu" class="ui-panel hidden" style="max-height: 80vh; overflow-y: auto;">
+            <h2>Loja e Personagens</h2>
+            
+            <div style="font-size:1.2rem; margin-bottom:15px; color:#ffdd00; font-weight:bold; text-shadow:0 0 10px #ffdd00;">
+                🌟 Suas Estrelas: <span id="shop-stars-display">0</span>
+            </div>
+
+            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px;">🦄 Selecione seu Unicórnio (Livres)</h3>
+            <div class="character-grid" id="character-grid">
+                <!-- Dynamically populated via JS -->
+            </div>
+
+            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px; margin-top:20px;">⚡ Poderes Adicionais Globais</h3>
+            <div class="character-grid" id="upgrades-grid">
+                <!-- Dynamically populated via JS -->
+            </div>
+
+            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px; margin-top:20px;">✨ Skins & Auras Estéticas</h3>
+            <div class="character-grid" id="skins-grid">
+                <!-- Dynamically populated via JS -->
+            </div>
+
+            <button id="btn-back" class="btn secondary" style="margin-top:20px;">Voltar ao Menu</button>
+        </div>
+
+        <!-- Leaderboard Menu -->
+        <div id="leaderboard-menu" class="ui-panel hidden">
+            <h2>🏆 Top 10 Pontuações</h2>
+            <div id="leaderboard-list">
+                <!-- Dynamically populated -->
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: center; width: 100%; flex-wrap: wrap;">
+                <button id="btn-lead-back" class="btn secondary">Voltar</button>
+                <button id="btn-clear-leaderboard" class="btn danger">Zerar Placar</button>
+            </div>
+        </div>
+
+        <!-- Game Over Menu -->
+        <div id="game-over" class="ui-panel hidden">
+            <h1 class="title">Game Over!</h1>
+            <p>Sua Pontuação: <span id="final-score">0</span></p>
+            <p>Estrelas Coletadas: <span id="final-stars">0</span></p>
+            <p>Fase Alcançada: <span id="final-phase">1</span></p>
+            <p>Personagem: <span id="final-char">Padrão</span></p>
+            <div id="name-input-container" class="hidden">
+                <p style="color: #00f0ff; margin-bottom: 10px;">🌟 Novo Recorde! 🌟</p>
+                <input type="text" id="player-name" placeholder="Digite seu nome" maxlength="15" autocomplete="off">
+                <button id="btn-save-score" class="btn primary" style="padding: 10px 20px; font-size: 1rem;">Salvar</button>
+            </div>
+            <button id="btn-restart" class="btn primary">Tentar Novamente</button>
+            <button id="btn-menu-go" class="btn secondary">Menu Principal</button>
+        </div>
+        <!-- Pause Menu -->
+        <div id="pause-menu" class="ui-panel hidden" style="z-index: 10; background: rgba(0,0,0,0.8);">
+            <h1 class="title">PAUSADO</h1>
+            <p>Pressione Espaço para continuar...</p>
+        </div>
+        
+        <!-- HUD -->
+        <div id="hud" class="hidden">
+            <div class="hud-stats">
+                <div class="score-display">Pontos: <span id="score">0</span></div>
+                <div class="stars-display">⭐ <span id="stars">0</span></div>
+                <div class="speed-display">💨 <span id="speed">1.0</span>x</div>
+            </div>
+            <div class="hud-powerups">
+                <div id="powerup-display" class="powerup-display hidden">🪶 Voo: <span id="flight-timer">10.0</span>s</div>
+                <div id="magnet-display" class="powerup-display hidden">🧲 Ímã: <span id="magnet-timer">8.0</span>s</div>
+                <div id="shield-display" class="powerup-display hidden">🛡️ Escudo: <span id="shield-timer">6.0</span>s</div>
+                <div id="bonus-display" class="powerup-display hidden">✨ x2 Pontos: <span id="bonus-timer">8.0</span>s</div>
+                <div id="slowmo-display" class="powerup-display hidden">🌀 Câmera Lenta: <span id="slowmo-timer">5.0</span>s</div>
+                <div id="infjump-display" class="powerup-display hidden">🦘 Pulos Inf: <span id="infjump-timer">10.0</span>s</div>
+                <div id="shrink-display" class="powerup-display hidden">🍄 Minúsculo: <span id="shrink-timer">8.0</span>s</div>
+                <div id="giant-display" class="powerup-display hidden">🦖 Gigante: <span id="giant-timer">8.0</span>s</div>
+                <div id="meteor-display" class="powerup-display hidden">☄️ Meteoro: <span id="meteor-timer">8.0</span>s</div>
+                <div id="rocket-display" class="powerup-display hidden">🚀 Foguete: <span id="rocket-timer">5.0</span>s</div>
+                <div id="blackhole-display" class="powerup-display hidden">🌌 Buraco Negro: <span id="blackhole-timer">6.0</span>s</div>
+                <div id="lucky-display" class="powerup-display hidden">🍀 Sorte x5: <span id="lucky-timer">8.0</span>s</div>
+                <div id="hover-display" class="powerup-display hidden">🛸 Planador: <span id="hover-timer">8.0</span>s</div>
+                <div id="nogap-display" class="powerup-display hidden">🌉 Caminho Livre: <span id="nogap-timer">15.0</span>s</div>
+            </div>
+        </div>
+        
+        <div id="input-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:5; display:none;"></div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
