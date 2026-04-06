@@ -75,6 +75,14 @@ const upgradesGrid = document.getElementById('upgrades-grid');
 const skinsGrid = document.getElementById('skins-grid');
 const shopStarsDisplay = document.getElementById('shop-stars-display');
 const inputOverlay = document.getElementById('input-overlay');
+const mobileControls = document.getElementById('mobile-controls');
+const mobileJumpBtn = document.getElementById('mobile-jump');
+const mobileDashBtn = document.getElementById('mobile-dash');
+const mobileSlamBtn = document.getElementById('mobile-slam');
+const mobilePauseBtn = document.getElementById('mobile-pause');
+
+// Detect touch device — show mobile controls only on touch screens
+const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
 const btnMute = document.getElementById('btn-mute');
 const globalStarsDisplay = document.getElementById('global-stars-display');
@@ -919,7 +927,13 @@ function initGame() {
     
     hud.classList.remove('hidden');
     inputOverlay.style.display = 'block';
-    
+
+    // Show mobile controls on touch devices
+    if (isTouchDevice()) {
+        mobileControls.style.display = 'block';
+        mobilePauseBtn.textContent = '⏸';
+    }
+
     updateHUD();
     requestAnimationFrame(update);
 }
@@ -1101,52 +1115,75 @@ window.addEventListener('keydown', (e) => {
         }
     }
 });
-inputOverlay.addEventListener('touchstart', (e) => { 
+// ─────────────────────────────────────────────────────────────────────────
+// MOBILE CONTROLS — Visible buttons for touch devices
+// ─────────────────────────────────────────────────────────────────────────
+
+function doMobileDash() {
+    if (state !== 'playing' || isPaused) return;
+    if (dashCooldown <= 0 && !isDashing) {
+        isDashing = true;
+        dashTimeLeft = 0.3;
+        dashCooldown = 3.0 * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
+        playSound('dash');
+    }
+}
+
+function doMobileSlam() {
+    if (state !== 'playing' || isPaused) return;
+    if (!player.onGround) {
+        player.vy = 30;
+        isSlamming = true;
+    }
+}
+
+function doMobilePause() {
+    if (state !== 'playing') return;
+    isPaused = !isPaused;
+    if (isPaused) {
+        pauseMenu.classList.remove('hidden');
+        mobilePauseBtn.textContent = '▶';
+    } else {
+        pauseMenu.classList.add('hidden');
+        mobilePauseBtn.textContent = '⏸';
+        update();
+    }
+}
+
+// Wire up mobile buttons (both touch and mouse for emulators)
+['touchstart', 'mousedown'].forEach(evType => {
+    mobileJumpBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); jump(); }, {passive: false});
+    mobileDashBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobileDash(); }, {passive: false});
+    mobileSlamBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobileSlam(); }, {passive: false});
+    mobilePauseBtn.addEventListener(evType, (e) => { e.preventDefault(); e.stopPropagation(); doMobilePause(); }, {passive: false});
+});
+
+// Visual feedback: button press animation
+[mobileJumpBtn, mobileDashBtn, mobileSlamBtn].forEach(btn => {
+    btn.addEventListener('touchstart', () => { btn.style.transform = 'scale(0.88)'; btn.style.opacity = '0.75'; }, {passive: true});
+    ['touchend', 'touchcancel', 'mouseup'].forEach(ev =>
+        btn.addEventListener(ev, () => { btn.style.transform = 'scale(1)'; btn.style.opacity = '1'; }, {passive: true})
+    );
+});
+
+// Fallback: tapping the canvas still works on touch (for tablets, etc.)
+inputOverlay.addEventListener('touchstart', (e) => {
+    // Only used if somehow a touch lands outside the buttons
     if (state === 'playing' && !isPaused) {
         let touch = e.touches[0];
-        let cwHalf = window.innerWidth / 2;
-        let chHalf = window.innerHeight / 2;
-        if (touch.clientX > cwHalf) {
-            jump();
-        } else {
-            if (touch.clientY > chHalf) {
-                if (!player.onGround) {
-                    player.vy = 30; // Slam
-                    isSlamming = true;
-                }
-            } else {
-                if (typeof dashCooldown !== 'undefined' && dashCooldown <= 0 && !isDashing) {
-                    isDashing = true;
-                    dashCooldown = 3.0 * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
-                    playSound('dash');
-                }
-            }
-        }
+        // Ignore if the touch target is one of the mobile buttons
+        if (touch.target && touch.target.closest && touch.target.closest('#mobile-controls')) return;
+        // Simple fallback: tap anywhere = jump
+        jump();
     }
-    e.preventDefault(); 
+    e.preventDefault();
 }, {passive: false});
-inputOverlay.addEventListener('mousedown', (e) => { 
+
+inputOverlay.addEventListener('mousedown', (e) => {
     if (state === 'playing' && !isPaused) {
-        let cwHalf = window.innerWidth / 2;
-        let chHalf = window.innerHeight / 2;
-        if (e.clientX > cwHalf) {
-            jump();
-        } else {
-            if (e.clientY > chHalf) {
-                if (!player.onGround) {
-                    player.vy = 30;
-                    isSlamming = true;
-                }
-            } else {
-                if (typeof dashCooldown !== 'undefined' && dashCooldown <= 0 && !isDashing) {
-                    isDashing = true;
-                    dashCooldown = 3.0 * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
-                    playSound('dash');
-                }
-            }
-        }
+        jump();
     }
-    e.preventDefault(); 
+    e.preventDefault();
 });
 
 function createPlayerParticle() {
@@ -2272,6 +2309,7 @@ function update() {
             gameOverMenu.classList.remove('hidden');
             hud.classList.add('hidden');
             inputOverlay.style.display = 'none';
+            mobileControls.style.display = 'none';
             finalScore.innerText = Math.floor(score);
             finalStars.innerText = starsCollected;
             document.getElementById('final-phase').innerText = currentPhase + 1;
@@ -2552,6 +2590,7 @@ btnRestart.onclick = () => { startMusic(); initGame(); };
 btnMenuGo.onclick = () => {
     gameOverMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
+    mobileControls.style.display = 'none';
     ctx.clearRect(0, 0, cw, ch); 
 };
 
