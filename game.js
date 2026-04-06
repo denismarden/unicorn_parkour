@@ -20,11 +20,11 @@ function resize() {
         // Melhora a visão no celular usando o aspecto padronizado de um S24 Plus
         let isPortrait = window.innerHeight > window.innerWidth;
         if (isPortrait) {
-            cw = canvas.width = bgCanvas.width = 1080;
-            ch = canvas.height = bgCanvas.height = 2340;
+            cw = canvas.width = bgCanvas.width = 900;
+            ch = canvas.height = bgCanvas.height = 1950;
         } else {
-            cw = canvas.width = bgCanvas.width = 2340;
-            ch = canvas.height = bgCanvas.height = 1080;
+            cw = canvas.width = bgCanvas.width = 1950;
+            ch = canvas.height = bgCanvas.height = 900;
         }
     } else {
         cw = canvas.width = bgCanvas.width = window.innerWidth;
