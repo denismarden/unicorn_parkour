@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Unicorn Parkour Adventure</title>
+    <!-- Fonte arredondada (se não carregar, cai para Segoe UI / fonte do sistema) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="game-container">
@@ -19,8 +22,9 @@
         <!-- Main Menu -->
         <div id="main-menu" class="ui-panel">
             <button id="btn-mute" class="btn secondary" style="position:absolute; top:10px; right:10px; font-size:1rem; padding:5px 10px;">🔊</button>
-            <h1 class="title">Unicorn Parkour</h1>
+            <h1 class="title titulo-animado">Unicorn Parkour</h1>
             <p class="subtitle">Salte, desvie e colete estrelas!</p>
+            <p class="dica-inicio">✨ Aperte Espaço ou toque em Jogar ✨</p>
             <div style="font-size:1.2rem; margin-bottom:15px; color:#ffdd00; font-weight:bold; text-shadow:0 0 10px #ffdd00;">
                 🌟 Estrelas: <span id="global-stars-display">0</span>
             </div>
@@ -49,7 +53,7 @@
                 🌟 Suas Estrelas: <span id="shop-stars-display">0</span>
             </div>
 
-            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px;">🦄 Selecione seu Unicórnio (Livres)</h3>
+            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px;">🦄 Selecione ou Desbloqueie seu Personagem</h3>
             <div class="character-grid" id="character-grid">
                 <!-- Dynamically populated via JS -->
             </div>
@@ -81,13 +85,15 @@
 
         <!-- Game Over Menu -->
         <div id="game-over" class="ui-panel hidden">
-            <h1 class="title">Game Over!</h1>
-            <p>Sua Pontuação: <span id="final-score">0</span></p>
+            <h1 class="title titulo-gameover">Game Over!</h1>
+            <p class="pontuacao-final">Sua Pontuação: <span id="final-score">0</span></p>
+            <div id="novo-recorde" class="novo-recorde hidden">🌟 NOVO RECORDE! 🌟</div>
+            <p>Seu recorde: <span id="final-recorde">0</span></p>
             <p>Estrelas Coletadas: <span id="final-stars">0</span></p>
             <p>Fase Alcançada: <span id="final-phase">1</span></p>
             <p>Personagem: <span id="final-char">Padrão</span></p>
             <div id="name-input-container" class="hidden">
-                <p style="color: #00f0ff; margin-bottom: 10px;">🌟 Novo Recorde! 🌟</p>
+                <p style="color: #00f0ff; margin-bottom: 10px;">🏆 Você entrou no Top 10 do placar!</p>
                 <input type="text" id="player-name" placeholder="Digite seu nome" maxlength="15" autocomplete="off">
                 <button id="btn-save-score" class="btn primary" style="padding: 10px 20px; font-size: 1rem;">Salvar</button>
             </div>
@@ -97,7 +103,7 @@
         <!-- Pause Menu -->
         <div id="pause-menu" class="ui-panel hidden" style="z-index: 10; background: rgba(0,0,0,0.8);">
             <h1 class="title">PAUSADO</h1>
-            <p>Pressione Espaço para continuar...</p>
+            <p>Pressione P ou Esc (ou toque em ▶) para continuar...</p>
         </div>
         
         <!-- HUD -->
@@ -108,20 +114,20 @@
                 <div class="speed-display">💨 <span id="speed">1.0</span>x</div>
             </div>
             <div class="hud-powerups">
-                <div id="powerup-display" class="powerup-display hidden">🪶 Voo: <span id="flight-timer">10.0</span>s</div>
-                <div id="magnet-display" class="powerup-display hidden">🧲 Ímã: <span id="magnet-timer">8.0</span>s</div>
-                <div id="shield-display" class="powerup-display hidden">🛡️ Escudo: <span id="shield-timer">6.0</span>s</div>
-                <div id="bonus-display" class="powerup-display hidden">✨ x2 Pontos: <span id="bonus-timer">8.0</span>s</div>
-                <div id="slowmo-display" class="powerup-display hidden">🌀 Câmera Lenta: <span id="slowmo-timer">5.0</span>s</div>
-                <div id="infjump-display" class="powerup-display hidden">🦘 Pulos Inf: <span id="infjump-timer">10.0</span>s</div>
-                <div id="shrink-display" class="powerup-display hidden">🍄 Minúsculo: <span id="shrink-timer">8.0</span>s</div>
-                <div id="giant-display" class="powerup-display hidden">🦖 Gigante: <span id="giant-timer">8.0</span>s</div>
-                <div id="meteor-display" class="powerup-display hidden">☄️ Meteoro: <span id="meteor-timer">8.0</span>s</div>
-                <div id="rocket-display" class="powerup-display hidden">🚀 Foguete: <span id="rocket-timer">5.0</span>s</div>
-                <div id="blackhole-display" class="powerup-display hidden">🌌 Buraco Negro: <span id="blackhole-timer">6.0</span>s</div>
-                <div id="lucky-display" class="powerup-display hidden">🍀 Sorte x5: <span id="lucky-timer">8.0</span>s</div>
-                <div id="hover-display" class="powerup-display hidden">🛸 Planador: <span id="hover-timer">8.0</span>s</div>
-                <div id="nogap-display" class="powerup-display hidden">🌉 Caminho Livre: <span id="nogap-timer">15.0</span>s</div>
+                <div id="powerup-display" class="powerup-display hidden">🪶 Voo: <span id="flight-timer">10.0</span></div>
+                <div id="magnet-display" class="powerup-display hidden">🧲 Ímã: <span id="magnet-timer">8.0</span></div>
+                <div id="shield-display" class="powerup-display hidden">🛡️ Escudo: <span id="shield-timer">6.0</span></div>
+                <div id="bonus-display" class="powerup-display hidden">✨ x2 Pontos: <span id="bonus-timer">8.0</span></div>
+                <div id="slowmo-display" class="powerup-display hidden">🌀 Câmera Lenta: <span id="slowmo-timer">5.0</span></div>
+                <div id="infjump-display" class="powerup-display hidden">🦘 Pulos Inf: <span id="infjump-timer">10.0</span></div>
+                <div id="shrink-display" class="powerup-display hidden">🍄 Minúsculo: <span id="shrink-timer">8.0</span></div>
+                <div id="giant-display" class="powerup-display hidden">🦖 Gigante: <span id="giant-timer">8.0</span></div>
+                <div id="meteor-display" class="powerup-display hidden">☄️ Meteoro: <span id="meteor-timer">8.0</span></div>
+                <div id="rocket-display" class="powerup-display hidden">🚀 Foguete: <span id="rocket-timer">5.0</span></div>
+                <div id="blackhole-display" class="powerup-display hidden">🌌 Buraco Negro: <span id="blackhole-timer">6.0</span></div>
+                <div id="lucky-display" class="powerup-display hidden">🍀 Sorte x5: <span id="lucky-timer">8.0</span></div>
+                <div id="hover-display" class="powerup-display hidden">🛸 Planador: <span id="hover-timer">8.0</span></div>
+                <div id="nogap-display" class="powerup-display hidden">🌉 Caminho Livre: <span id="nogap-timer">15.0</span></div>
             </div>
         </div>
         
@@ -187,6 +193,7 @@
             </button>
         </div>
     </div>
+    <script src="personagem.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

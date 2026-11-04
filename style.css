@@ -2,7 +2,8 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: 'Outfit', sans-serif;
+    /* Fredoka (Google Fonts, no index.html); sem internet cai para a fonte do sistema */
+    font-family: 'Fredoka', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
     user-select: none;
 }
 
@@ -23,7 +24,10 @@ body {
     height: 100vh;
     overflow: hidden;
     background: radial-gradient(circle at bottom, #1b0a2c, #05010f);
+    touch-action: none; /* toque no jogo não rola nem dá zoom (os controles usam pointer events) */
 }
+
+.ui-panel { touch-action: pan-y; } /* menus continuam rolando com o dedo */
 
 @media (min-aspect-ratio: 16/9) {
     #game-container {
@@ -96,6 +100,66 @@ canvas {
     margin-bottom: 5px;
     line-height: 1.1;
 }
+
+/* Título da tela inicial: flutua e tem um brilho passando */
+.titulo-animado {
+    background: linear-gradient(100deg, #FF9CCB 0%, #B9A4FF 30%, #FFFFFF 45%, #9BE7FF 60%, #FF9CCB 100%);
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 3px 0 #2A1450) drop-shadow(0 0 18px rgba(185, 164, 255, 0.5));
+    animation: tituloFlutua 3s ease-in-out infinite, tituloBrilho 4s linear infinite;
+}
+@keyframes tituloFlutua {
+    0%, 100% { transform: translateY(0) rotate(-1deg); }
+    50% { transform: translateY(-6px) rotate(1deg); }
+}
+@keyframes tituloBrilho {
+    from { background-position: 100% 0; }
+    to { background-position: -150% 0; }
+}
+
+.dica-inicio {
+    color: #FFE08A;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    animation: piscaSuave 1.4s ease-in-out infinite;
+}
+@keyframes piscaSuave {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+/* Game over: título cai e quica; novo recorde dá um "pop" */
+.titulo-gameover {
+    background: linear-gradient(90deg, #FF9CCB, #B9A4FF);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 3px 0 #2A1450);
+    animation: gameOverCai 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes gameOverCai {
+    from { transform: translateY(-60px) scale(1.3); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.pontuacao-final { font-size: 1.4rem; font-weight: 700; }
+.pontuacao-final span { color: #FFE08A; }
+.novo-recorde {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #FFE08A;
+    text-shadow: 0 2px 0 #2A1450;
+    animation: recordePop 0.9s ease-in-out infinite alternate;
+}
+@keyframes recordePop {
+    from { transform: scale(1); }
+    to { transform: scale(1.12); }
+}
+
+/* Barra de rolagem dos menus no estilo do jogo */
+.ui-panel { scrollbar-color: #B9A4FF rgba(255, 255, 255, 0.05); scrollbar-width: thin; }
+.ui-panel::-webkit-scrollbar { width: 8px; }
+.ui-panel::-webkit-scrollbar-thumb { background: #B9A4FF; border-radius: 8px; }
 
 .subtitle {
     font-size: 1.2rem;
@@ -184,39 +248,22 @@ canvas {
     align-items: flex-end;
 }
 
-.score-display, .stars-display {
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(10px);
-    padding: 12px 24px;
+/* HUD: pílulas de "vidro" com texto creme contornado (combina com a noite mágica) */
+.score-display, .stars-display, .speed-display {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    padding: 10px 22px;
     border-radius: 30px;
     font-size: 1.5rem;
-    font-weight: 900;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+    font-weight: 700;
+    color: #FFF6E8;
+    border: 1.5px solid rgba(185, 164, 255, 0.7);
+    box-shadow: 0 4px 0 rgba(42, 20, 80, 0.6), 0 6px 18px rgba(0, 0, 0, 0.35);
+    text-shadow: 0 2px 0 #2A1450, 2px 0 0 #2A1450, -2px 0 0 #2A1450, 0 -2px 0 #2A1450;
 }
-
-.stars-display {
-    color: #ffdd00;
-    text-shadow: 0 0 10px rgba(255, 221, 0, 0.5);
-}
-
-.score-display {
-    color: #00f0ff;
-    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
-}
-
-.speed-display {
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(10px);
-    padding: 12px 24px;
-    border-radius: 30px;
-    font-size: 1.5rem;
-    font-weight: 900;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-    color: #ff5500;
-    text-shadow: 0 0 10px rgba(255, 85, 0, 0.5);
-}
+.score-display span { color: #9BE7FF; }
+.stars-display span { color: #FFE08A; }
+.speed-display span { color: #FF9CCB; }
 
 .powerup-display {
     background: rgba(255, 255, 255, 0.2);

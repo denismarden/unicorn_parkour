@@ -3,6 +3,48 @@ Storage.prototype.setItem = function () { try { _origSet.apply(this, arguments);
 const _origGet = Storage.prototype.getItem;
 Storage.prototype.getItem = function () { try { return _origGet.apply(this, arguments); } catch (e) { return null; } };
 
+// ─────────────────────────────────────────────────────────────────────────
+// CONSTANTES DE AJUSTE — física, sensação do pulo, dificuldade e economia
+// ─────────────────────────────────────────────────────────────────────────
+const PASSO_FISICA = 1 / 60;          // passo fixo da simulação (s) — igual em 60, 120 ou 144 Hz
+const GRAVIDADE_BASE = 0.6;           // gravidade por passo
+const FORCA_PULO = -12;               // velocidade vertical inicial do pulo
+const MULT_GRAVIDADE_QUEDA = 1.6;     // a queda é mais pesada que a subida
+const CORTE_PULO = 0.5;               // soltar o botão na subida multiplica a velocidade por isto
+const PASSOS_BUFFER_PULO = 8;         // ~133 ms: pulo apertado pouco antes de pousar ainda vale
+const PASSOS_COYOTE = 6;              // ~100 ms: depois de sair da borda ainda conta como "no chão"
+const VEL_SLAM = 30;                  // velocidade de descida do slam
+const VEL_MAX_QUEDA = 16;             // queda livre nunca passa disto (o slam pode ir até VEL_SLAM)
+const VEL_TREMOR_POUSO = 15;          // pouso acima desta velocidade dá um tremor leve
+const SUAVIZACAO_SLOWMO = 0.08;       // transição suave da câmera lenta
+const MULT_CURVA_DASH = 1.5;          // dash com entrada/saída suave (1.5 mantém a distância total)
+const VEL_MIN_SLAM = 15;              // abaixo disso o pouso não conta como slam
+const DURACAO_DASH = 0.3;             // s
+const RECARGA_DASH = 3.0;             // s
+const BONUS_VEL_DASH = 25;            // velocidade extra durante o dash
+const ACELERACAO_JOGO = 0.0004;       // aumento da velocidade alvo a cada passo
+const VEL_MAXIMA = 22;                // teto da velocidade do jogo
+const SUAVIZACAO_VEL = 0.02;          // quão rápido a velocidade alcança o alvo
+const ESCALA_SLOWMO = 0.45;           // escala de tempo da câmera lenta
+const TREMOR_MORTE = 14;
+const TREMOR_POUSO_FORTE = 4;
+const DECAIMENTO_TREMOR = 0.9;
+const DURACAO_GIRO = 0.5;             // s — duração do mortal para trás do pulo duplo
+const PASSOS_POUSO = 10;              // duração da pose de recuperação depois de pousar
+const PASSOS_ANIM_MORTE = 60;         // animação de morte antes da tela de game over
+const PASSOS_HITPAUSE_MORTE = 6;      // congelamento curto no impacto da morte
+const PASSOS_INVULNERAVEL = 60;       // invulnerabilidade depois de escudo / segunda chance
+const MAX_PARTICULAS = 150;           // pool fixo reaproveitado
+const FATOR_CORRIDA = 0.11;           // velocidade das patas por unidade de velocidade do jogo
+const MAX_PASSO_CORRIDA = 0.9;        // limite para as patas não "embaralharem" em alta velocidade
+const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance real do personagem
+const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
+const CHANCE_POWERUP = 0.035;         // por plataforma
+const CHANCE_OMNI = 0.02;             // por plataforma (no máximo 1 por fase)
+const CONVERSAO_ESTRELAS = 0.2;       // fração das estrelas da partida que vai para a carteira
+const MIN_LARGURA_PLATAFORMA = 80;    // evita janelas de pouso de 2-3 frames nas fases finais
+const CUSTO_POR_PERSONAGEM = 800;     // preço = id × este valor (os 3 primeiros são livres)
+
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 let floatingTexts = [];
@@ -11,25 +53,82 @@ const bgCanvas = document.getElementById('bg-canvas');
 const bgCtx = bgCanvas.getContext('2d');
 
 let cw, ch;
+let bgStars = [];          // estrelas que piscam no céu
+let cacheCenario = null;   // camadas de fundo pré-desenhadas (refeitas na troca de fase / resize)
 
-// Detect touch device — show mobile controls only on touch screens
+// ─────────────────────────────────────────────────────────────────────────
+// PALETA — estilo "noite mágica" com nuvens pastel (as cores de cada fase continuam em PHASES)
+// ─────────────────────────────────────────────────────────────────────────
+const PALETA = {
+    lua: '#FFE9B8',
+    estrela: '#FFFFFF', estrelaQuente: '#FFE8B0',
+    aurora: ['#7FFFD4', '#FF9EE5', '#B9A4FF'],
+    nuvem: '#FFFFFF', nuvemSombra: '#CBB8EE', nuvemContorno: '#4A2763',
+    nuvemMovel: '#DDF0FF', nuvemChuva: '#B9B0CC',
+    cristal: '#BFEFFF', cristalSombra: '#6FA8E8', cristalContorno: '#2A3A7A',
+    barreira: ['#7FFFD4', '#B9A4FF'],
+    bloco: '#9C7BDB', blocoSombra: '#5A3F96', blocoContorno: '#2E1A55',
+    particulas: ['#FF9CCB', '#9BE7FF', '#FFE08A', '#B9A4FF', '#FFFFFF'],
+    poeira: '#FFFFFF', gota: '#9BD0FF',
+    texto: '#FFF6E8', textoContorno: '#2A1450', destaque: '#FFE08A',
+    vagalume: '#FFF3A0', sombraJogador: '#000000'
+};
+const FONTE_JOGO = "'Fredoka', 'Segoe UI', system-ui, sans-serif";
+
+// Detecta aparelho de toque — mostra os controles mobile só em telas de toque
 const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const gameContainer = document.getElementById('game-container');
 
+// Resolução lógica (cw × ch) + nitidez em telas HiDPI.
+// No celular a altura (paisagem) ou a largura (retrato) lógica fica em 900 para manter a "câmera" afastada,
+// mas a proporção acompanha a tela de verdade (sem esticar a imagem).
 function resize() {
+    const rect = gameContainer.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
+    const chAntigo = ch;
     if (isTouchDevice()) {
-        // Melhora a visão no celular usando o aspecto padronizado de um S24 Plus
-        let isPortrait = window.innerHeight > window.innerWidth;
-        if (isPortrait) {
-            cw = canvas.width = bgCanvas.width = 900;
-            ch = canvas.height = bgCanvas.height = 1950;
-        } else {
-            cw = canvas.width = bgCanvas.width = 1950;
-            ch = canvas.height = bgCanvas.height = 900;
-        }
+        if (cssH > cssW) { cw = 900; ch = Math.round(900 * cssH / cssW); }
+        else { ch = 900; cw = Math.round(900 * cssW / cssH); }
     } else {
-        cw = canvas.width = bgCanvas.width = window.innerWidth;
-        ch = canvas.height = bgCanvas.height = window.innerHeight;
+        cw = Math.round(cssW); ch = Math.round(cssH);
     }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const escala = (cssW * dpr) / cw;
+    for (const [cv, c2d] of [[canvas, ctx], [bgCanvas, bgCtx]]) {
+        cv.width = Math.round(cssW * dpr);
+        cv.height = Math.round(cssH * dpr);
+        c2d.setTransform(escala, 0, 0, escala, 0, 0);
+    }
+    gerarEstrelasFundo();
+    cacheCenario = null;
+    if (chAntigo && chAntigo !== ch) reescalarMundo(chAntigo);
+    else if (chAntigo && typeof state !== 'undefined' && state === 'playing' && isPaused) render();
+}
+
+function gerarEstrelasFundo() {
+    bgStars = [];
+    for (let i = 0; i < 26; i++) {
+        bgStars.push({
+            x: Math.random() * cw, y: Math.random() * ch * 0.6,
+            size: Math.random() * 2 + 0.5,
+            speed: Math.random() * 0.5 + 0.1,
+            alpha: Math.random() * 0.4 + 0.4,       // brilho fixo por estrela (sem piscar aleatório)
+            fase: Math.random() * Math.PI * 2
+        });
+    }
+}
+
+// Ao redimensionar / girar o celular no meio da partida, reposiciona o mundo na nova altura
+function reescalarMundo(chAntigo) {
+    const r = ch / chAntigo;
+    for (const p of platforms) { p.y *= r; p.baseY *= r; p.h = ch; }
+    for (const arr of [stars, feathers, powerupItems]) for (const o of arr) o.y *= r;
+    limparParticulas();
+    // reescala a posição dos PÉS (senão o jogador fica flutuando acima da plataforma)
+    if (player) { player.y = (player.y + player.h) * r - player.h; player.x = cw * 0.2; player.ant = null; limparEfeitosPersonagem(player); }
+    for (const p of platforms) p.yAnt = undefined;
+    if (state === 'playing' && !isPaused) alternarPausa();   // pausa para o jogador se reorganizar
+    else if (state === 'playing') render();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -110,7 +209,11 @@ const nameInputContainer = document.getElementById('name-input-container');
 const playerNameInput = document.getElementById('player-name');
 
 // Game Variables
-let globalStars = parseInt(localStorage.getItem('uniparkourGlobalStars')) || 10000;
+// Carteira começa em 0 para jogadores novos (quem já tem estrelas salvas mantém o saldo)
+const _estrelasSalvas = localStorage.getItem('uniparkourGlobalStars');
+let globalStars = _estrelasSalvas === null ? 0 : (parseInt(_estrelasSalvas) || 0);
+let unlockedChars = JSON.parse(localStorage.getItem('uniparkourChars')) || [0, 1, 2];
+let partidasJogadas = parseInt(localStorage.getItem('uniparkourPartidas')) || 0;
 let savedUpgrades = JSON.parse(localStorage.getItem('uniparkourUpgrades')) || {};
 const defaultUpgrades = {
     jump: 0, score: 0, shield: 0, magnet: 0, dash_cd: 0, dash_pwr: 0,
@@ -135,6 +238,11 @@ let screenShake = 0;
 let isDashing = false;
 let dashCooldown = 0;
 let dashTimeLeft = 0;
+let gameSpeedAlvo = 5;
+let passosMorte = 0;
+let plataformasFaceis = 0;
+let mostrarTutorial = false;
+let tutorialIdx = 0;
 
 let state = 'menu';
 let isPaused = false;
@@ -171,8 +279,7 @@ let player;
 let platforms = [];
 let stars = [];
 let feathers = [];
-let particles = [];
-let bgStars = [];
+let obstaculos = []; // { tipo: 'espinho'|'barreira'|'bloco', plat, x, w, h, destruido }
 
 // ─────────────────────────────────────────────────────────────────────────
 // 10 TIPOS DE ESTRELA — cada tipo tem valor, visual e raridade
@@ -199,15 +306,6 @@ function pickStarType() {
         if (roll <= 0) return t;
     }
     return STAR_TYPES[0];
-}
-
-for (let i = 0; i < 100; i++) {
-    bgStars.push({
-        x: Math.random() * (window.innerWidth || 1920),
-        y: Math.random() * (window.innerHeight || 1080),
-        size: Math.random() * 2 + 0.5,
-        speed: Math.random() * 0.5 + 0.1
-    });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -406,6 +504,32 @@ const PHASES = [
     }
 ];
 
+// Variações de plataforma por tema: chance de plataforma móvel (sobe e desce) ou quebradiça (cai ~0,6 s após pisar)
+const MODS_FASE = {
+    1: { movel: 0.4 },              // Ilhas Flutuantes
+    3: { quebra: 0.25 },            // Cavernas de Lava
+    5: { movel: 0.4 },              // Órbita Cósmica
+    8: { quebra: 0.4 },             // Dimensão Sombria
+    11: { movel: 0.5 },             // Abismo Oceânico
+    12: { movel: 0.3, quebra: 0.2 },// Ruínas Mecânicas
+    16: { quebra: 0.35 },           // Cratera Vulcânica
+    19: { movel: 0.5 }              // Fronteira Galáctica
+};
+
+// A fase agora avança por DISTÂNCIA percorrida (não por pontos), então estrelas raras
+// e multiplicadores não pulam várias fases de uma vez. Cada fase dura um pouco mais que a anterior.
+// (scoreThreshold ficou só como referência histórica e não é mais usado.)
+{
+    let distAcumulada = 0;
+    PHASES.forEach((ph, i) => {
+        ph.mods = MODS_FASE[i] || (i >= 20 ? { movel: 0.3, quebra: 0.25 } : {});
+        ph.minW = Math.max(ph.minW, MIN_LARGURA_PLATAFORMA);
+        ph.maxW = Math.max(ph.maxW, ph.minW + 40);
+        ph.distThreshold = distAcumulada;
+        distAcumulada += 18000 + i * 2000;
+    });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // GLOBAL LEADERBOARD — Firebase Realtime Database
 // Follow the setup guide to configure your Firebase URL.
@@ -519,16 +643,19 @@ function renderLeaderboard() {
     }
 
     const medals = ['🥇', '🥈', '🥉'];
+    // Monta as linhas com textContent (nunca innerHTML): nomes vindos do placar global não executam código
+    const span = (cls, txt) => { const s = document.createElement('span'); s.className = cls; s.textContent = txt; return s; };
     leaderboard.forEach((entry, index) => {
         let div = document.createElement('div');
         div.className = 'lb-row';
         let badge = medals[index] || `#${index + 1}`;
-        let cName = entry.charName
-            ? `<span class="lb-char" style="color:#00f0ff;font-size:0.85em;margin-left:5px;">(${entry.charName} — Fase ${entry.phase || 1})</span>`
-            : '';
-        div.innerHTML = `<span class="lb-rank">${badge}</span>
-                         <span class="lb-name">${entry.name}${cName}</span>
-                         <span class="lb-score">${Number(entry.score).toLocaleString()} pts</span>`;
+        const nome = span('lb-name', String(entry.name).slice(0, 20));
+        if (entry.charName) {
+            const c = span('lb-char', ` (${String(entry.charName).slice(0, 20)} — Fase ${parseInt(entry.phase) || 1})`);
+            c.style.cssText = 'color:#00f0ff;font-size:0.85em;margin-left:5px;';
+            nome.appendChild(c);
+        }
+        div.append(span('lb-rank', badge), nome, span('lb-score', `${Number(entry.score).toLocaleString()} pts`));
         list.appendChild(div);
     });
 
@@ -749,16 +876,26 @@ function showToast(msg) {
     }, 3000);
 }
 
+const TIPOS_MISSAO = [
+    { type: 'stars', target: 3000, reward: 600, desc: 'Colete 3.000 em valor de estrelas' },
+    { type: 'jumps', target: 50, reward: 300, desc: 'Realize 50 pulos' },
+    { type: 'score', target: 10000, reward: 800, desc: 'Some 10.000 pontos de distância' },
+    { type: 'slams', target: 10, reward: 500, desc: 'Faça 10 slams' },
+    { type: 'dashes', target: 15, reward: 400, desc: 'Use o dash 15 vezes' },
+    { type: 'powerups', target: 8, reward: 500, desc: 'Pegue 8 power-ups' },
+    { type: 'fases', target: 5, reward: 900, desc: 'Avance 5 fases' },
+    { type: 'obstaculos', target: 10, reward: 700, desc: 'Destrua 10 obstáculos' }
+];
+
+function salvarMissao() {
+    if (currentMission) localStorage.setItem('uniparkourMission', JSON.stringify(currentMission));
+}
+
 function updateMissionUI() {
     if (!currentMission) {
-        const types = ['stars', 'jumps', 'score'];
-        let type = types[Math.floor(Math.random() * types.length)];
-        let target = 0, reward = 0, desc = '';
-        if (type === 'stars') { target = 200; reward = 3000; desc = 'Colete 200 estrelas'; }
-        else if (type === 'jumps') { target = 50; reward = 2000; desc = 'Realize 50 pulos'; }
-        else if (type === 'score') { target = 10000; reward = 5000; desc = 'Alcance 10,000 pontos'; }
-        currentMission = { type, target, current: 0, reward, desc };
-        localStorage.setItem('uniparkourMission', JSON.stringify(currentMission));
+        const m = TIPOS_MISSAO[Math.floor(Math.random() * TIPOS_MISSAO.length)];
+        currentMission = { ...m, current: 0 };
+        salvarMissao();
     }
     missionDesc.innerText = currentMission.desc;
     let pct = Math.min(100, (currentMission.current / currentMission.target) * 100);
@@ -785,12 +922,8 @@ function checkMission(type, amount) {
     if (!currentMission) return;
     if (currentMission.type === type) {
         currentMission.current += amount;
-        if (currentMission.current >= currentMission.target) {
-            completeMission();
-        } else {
-            localStorage.setItem('uniparkourMission', JSON.stringify(currentMission));
-            updateMissionUI();
-        }
+        // Progresso fica em memória e é salvo no fim da partida (evita gravar no localStorage a cada frame)
+        if (currentMission.current >= currentMission.target) completeMission();
     }
 }
 
@@ -821,7 +954,30 @@ const characters = [
     { id: 21, cost: 0, name: "Gatinho", desc: "Pula 4x e cai suave.", maxJumps: 4, gravityMult: 0.6, body: "#ffaadd", mane: ["#ff66bb", "#ffffff"], particle: "#ff99cc" },
     { id: 22, cost: 0, name: "Coelho", desc: "Pulo ultra-alto triplo.", jumpPowerMult: 1.8, maxJumps: 3, body: "#ffffff", mane: ["#ffccee", "#aaddff"], particle: "#ffffff" }
 ];
-let selectedChar = 0;
+// Preço dos personagens: os 3 primeiros são livres, depois sobe aos poucos
+characters.forEach(c => { c.cost = c.id < 3 ? 0 : c.id * CUSTO_POR_PERSONAGEM; });
+let selectedChar = parseInt(localStorage.getItem('uniparkourChar')) || 0;
+if (!unlockedChars.includes(selectedChar)) selectedChar = 0;
+
+function selecionarPersonagem(char) {
+    if (unlockedChars.includes(char.id)) {
+        selectedChar = char.id;
+        localStorage.setItem('uniparkourChar', selectedChar);
+        renderCharMenu();
+        return;
+    }
+    if (globalStars < char.cost) { alert("Estrelas insuficientes!"); return; }
+    if (!confirm(`Desbloquear ${char.name} por ${char.cost} estrelas?`)) return;
+    globalStars -= char.cost;
+    unlockedChars.push(char.id);
+    selectedChar = char.id;
+    localStorage.setItem('uniparkourGlobalStars', globalStars);
+    localStorage.setItem('uniparkourChars', JSON.stringify(unlockedChars));
+    localStorage.setItem('uniparkourChar', selectedChar);
+    updateGlobalStarsDisplay();
+    renderCharMenu();
+    playSound('buy');
+}
 
 const upgrades = [
     { id: 'jump', name: 'Salto Duplo+', desc: '+1 Pulo extra garantido', cost: 20000, maxLevel: 2 },
@@ -918,18 +1074,17 @@ function renderCharMenu() {
     characters.forEach(char => {
         const card = document.createElement('div');
         card.className = `char-card ${char.id === selectedChar ? 'selected' : ''}`;
-        card.onclick = () => {
-            document.querySelectorAll('#character-grid .char-card').forEach(c => c.classList.remove('selected'));
-            card.classList.add('selected');
-            selectedChar = char.id;
-        };
+        card.onclick = () => selecionarPersonagem(char);
+        const liberado = unlockedChars.includes(char.id);
+        if (!liberado) card.style.opacity = '0.75';
         const preview = document.createElement('div'); preview.className = 'char-color-preview'; preview.style.backgroundColor = char.body;
         const mane = document.createElement('div');
         mane.style.position = 'absolute'; mane.style.top = '-5px'; mane.style.right = '-15px'; mane.style.width = '70px'; mane.style.height = '40px';
         mane.style.background = `linear-gradient(135deg, ${char.mane[0]}, ${char.mane[1]})`; mane.style.transform = 'rotate(45deg)';
         preview.appendChild(mane);
 
-        card.innerHTML += `<div class="char-name">${char.name}</div><div class="char-desc">${char.desc}</div>`;
+        card.innerHTML += `<div class="char-name">${char.name}</div><div class="char-desc">${char.desc}</div>` +
+            `<div style="font-weight:bold; white-space:nowrap; color:${liberado ? '#00f0ff' : '#ffdd00'}">${liberado ? (char.id === selectedChar ? 'EQUIPADO' : 'USAR') : '🔒 ' + char.cost + ' ⭐'}</div>`;
         card.insertBefore(preview, card.firstChild);
         charGrid.appendChild(card);
     });
@@ -981,12 +1136,28 @@ function initGame() {
     distance = 0;
     currentPhase = 0;
     phaseAnnounceFrames = 0;
-    gameSpeed = PHASES[0].baseSpeed;
+    gameSpeed = gameSpeedAlvo = PHASES[0].baseSpeed;
     frames = 0;
     platforms = [];
     stars = [];
     feathers = [];
-    particles = [];
+    limparParticulas();
+    // Zera tudo que poderia vazar da partida anterior
+    powerupItems = [];
+    obstaculos = [];
+    floatingTexts = [];
+    isSlamming = false;
+    isDashing = false; dashCooldown = 0; dashTimeLeft = 0;
+    screenShake = 0; sleepFrames = 0;
+    passosMorte = 0;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // Espaço não "clica" no botão focado
+
+    // Tutorial nas 3 primeiras partidas; começo sempre com alguns vãos curtos e planos
+    partidasJogadas++;
+    localStorage.setItem('uniparkourPartidas', partidasJogadas);
+    mostrarTutorial = partidasJogadas <= 3;
+    tutorialIdx = 0;
+    plataformasFaceis = mostrarTutorial ? 6 : 2;
 
     isFlying = false;
     flightTimeLeft = 0;
@@ -1036,11 +1207,19 @@ function initGame() {
         char: selectedCharObj,
         spin: 0,
         scaleX: 1, scaleY: 1,
-        // Character stats overrides
-        gravity: 0.6 * (selectedCharObj.gravityMult || 1.0) * (1 - ((unlockedUpgrades.gravity_f || 0) * 0.08)),
-        jumpPower: -12 * (selectedCharObj.jumpPowerMult || 1.0) * (1 + ((unlockedUpgrades.jump_pwr || 0) * 0.05)),
-        maxJumps: (selectedCharObj.maxJumps || 2) + unlockedUpgrades.jump
+        // Atributos do personagem
+        gravity: GRAVIDADE_BASE * (selectedCharObj.gravityMult || 1.0) * (1 - ((unlockedUpgrades.gravity_f || 0) * 0.08)),
+        jumpPower: FORCA_PULO * (selectedCharObj.jumpPowerMult || 1.0) * (1 + ((unlockedUpgrades.jump_pwr || 0) * 0.05)),
+        maxJumps: (selectedCharObj.maxJumps || 2) + unlockedUpgrades.jump,
+        // Sensação do pulo
+        coyote: 0, bufferPulo: 0, podeCortarPulo: false,
+        // Animação
+        runPhase: 0, mistura: 1, rot: 0,
+        poseAr: { fl: -35, fr: -15, bl: 25, br: 5 },
+        hurtFrames: 0, sorriso: 0, piscar: 150, assustado: false
     };
+
+    limparEfeitosPersonagem(player); // estrelinhas da partida anterior não reaparecem
 
     if (unlockedUpgrades.start_stars > 0) {
         starsCollected = unlockedUpgrades.start_stars * 100;
@@ -1053,11 +1232,14 @@ function initGame() {
         shieldDisplay.classList.remove('hidden');
     }
 
-    platforms.push({ x: 0, y: ch / 2 + 50, w: cw, h: ch });
+    platforms.push({ x: 0, y: ch / 2 + 50, baseY: ch / 2 + 50, w: cw, h: ch });
 
     lastPlatformX = cw;
     applyPhaseParams();
     generateWorld();
+    // Arrancada: começa parado e acelera suavemente até a velocidade da fase (a geração acima já usou a velocidade alvo)
+    gameSpeed = 0;
+    escalaTempo = 1; tremorX = tremorY = 0;
 
     mainMenu.classList.add('hidden');
     gameOverMenu.classList.add('hidden');
@@ -1074,7 +1256,7 @@ function initGame() {
     }
 
     updateHUD();
-    requestAnimationFrame(update);
+    iniciarLoop();
 }
 
 function applyPhaseParams() {
@@ -1089,25 +1271,77 @@ let lastPlatformX = 0;
 let minGap = 150, maxGap = 450;
 let minWidth = 150, maxWidth = 500;
 
+// Simula um pulo do personagem atual (com os pulos extras dados no ápice) e devolve:
+// - distancia: quanto ele anda na horizontal até voltar à altura de pouso (`subida` px acima da partida)
+// - alturaMax: a maior altura que ele consegue atingir
+// Usado para nunca gerar vãos ou degraus impossíveis para o personagem escolhido.
+function alcanceDoPulo(subida) {
+    const pulos = Math.min(player.maxJumps, 3);
+    let y = 0, vy = player.jumpPower, usados = 1, passos = 0, alturaMax = 0;
+    while (passos < 600) {
+        vy += vy > 0 ? player.gravity * MULT_GRAVIDADE_QUEDA : player.gravity;
+        if (vy > VEL_MAX_QUEDA) vy = VEL_MAX_QUEDA;
+        y += vy; passos++;
+        if (-y > alturaMax) alturaMax = -y;
+        if (vy >= 0 && usados < pulos) { vy = player.jumpPower; usados++; }
+        if (vy > 0 && -y <= subida) break;
+    }
+    const folgaHitbox = player.w * 0.4; // a hitbox tem 20% de folga de cada lado
+    // Durante a arrancada a velocidade ainda está subindo: usa quase a velocidade alvo
+    const vel = Math.max(gameSpeed, gameSpeedAlvo * 0.9);
+    return { distancia: passos * vel + folgaHitbox, alturaMax };
+}
+
+const POWERUP_TYPES = ['magnet', 'shield', 'bonus', 'slowmo', 'infjump', 'starchest', 'shrink', 'giant', 'meteor', 'rocket', 'blackhole', 'lucky', 'hover', 'coinshower', 'rainbow', 'jackpot', 'nogap'];
+const DIMENSOES_OBSTACULO = { espinho: [36, 22], barreira: [22, 150], bloco: [44, 44] };
+
 function generateWorld() {
+    const ph = PHASES[currentPhase];
     while (lastPlatformX < distance + cw * 2) {
         let gap = Math.random() * (maxGap - minGap) + minGap;
         let w = Math.random() * (maxWidth - minWidth) + minWidth;
 
         let prevPlatform = platforms[platforms.length - 1];
-        let py = prevPlatform ? prevPlatform.y : ch / 2;
+        let py = prevPlatform ? prevPlatform.baseY : ch / 2;
 
         let yOffset = (Math.random() * 250) - 125;
+        let trechoLivre = false; // sem obstáculos nem plataformas especiais
+
+        if (plataformasFaceis > 0) {
+            gap = 120 + Math.random() * 60;
+            yOffset = 0;
+            w = Math.max(w, 300);
+            plataformasFaceis--;
+            trechoLivre = true;
+        }
 
         if (rainbowPlatformsCount > 0) {
             gap = 0;
             yOffset = 0;
             rainbowPlatformsCount--;
+            trechoLivre = true;
         }
 
         if (isNoGapActive) {
             gap = 0;
             yOffset = 0;
+            trechoLivre = true;
+        }
+
+        // Plataformas especiais do tema da fase
+        let amp = 0, quebradica = false;
+        if (gap > 0 && !trechoLivre) {
+            if (ph.mods.movel && Math.random() < ph.mods.movel) amp = 30 + Math.random() * 30;
+            else if (ph.mods.quebra && Math.random() < ph.mods.quebra && w < 320) quebradica = true;
+        }
+
+        // Garante que o vão e a subida caibam no alcance real do personagem (com margem de segurança)
+        if (gap > 0) {
+            const alc = alcanceDoPulo(0);
+            const subidaMax = alc.alturaMax * MARGEM_ALCANCE - amp;
+            if (-yOffset > subidaMax) yOffset = -subidaMax;
+            const subida = Math.max(0, -yOffset) + amp;
+            gap = Math.min(gap, alcanceDoPulo(subida).distancia * MARGEM_ALCANCE);
         }
 
         let y = py + yOffset;
@@ -1115,7 +1349,18 @@ function generateWorld() {
         if (y > ch * 0.8) y = ch * 0.8;
 
         let x = lastPlatformX + gap;
-        platforms.push({ x: x, y: y, w: w, h: ch });
+        const plat = { x: x, y: y, baseY: y, w: w, h: ch };
+        if (amp) { plat.amp = amp; plat.velOsc = 0.02 + Math.random() * 0.02; plat.faseOsc = Math.random() * Math.PI * 2; }
+        if (quebradica) { plat.quebradica = true; plat.tempoPisado = 0; plat.vyQueda = 0; }
+        platforms.push(plat);
+
+        // Obstáculos (a partir da fase 2): espinho pede pulo, barreira pede dash (ou pulo duplo), bloco pede slam
+        if (!trechoLivre && currentPhase >= 1 && w >= 160 && Math.random() < Math.min(0.45, 0.12 + currentPhase * 0.015)) {
+            const r = Math.random();
+            const tipo = r < 0.5 ? 'espinho' : (r < 0.75 ? 'barreira' : 'bloco');
+            const [ow, oh] = DIMENSOES_OBSTACULO[tipo];
+            obstaculos.push({ tipo, plat, x: x + w * 0.4 + Math.random() * (w * 0.3 - ow), w: ow, h: oh, destruido: false });
+        }
 
         let srMult = (player.char.spawnRateMult || 1.0) * (1 + ((unlockedUpgrades.star_spawn || 0) * 0.15));
         if (Math.random() < 0.6 * srMult) {
@@ -1143,9 +1388,8 @@ function generateWorld() {
             });
         }
 
-        // Spawn powerup items (mutually exclusive, low chance)
-        const POWERUP_TYPES = ['magnet', 'shield', 'bonus', 'infjump', 'starchest', 'shrink', 'giant', 'meteor', 'rocket', 'blackhole', 'lucky', 'hover', 'coinshower', 'rainbow', 'jackpot', 'nogap'];
-        if (!omniSpawnedThisPhase && Math.random() < 0.03 * srMult) {
+        // Power-ups: chance base fixa (o multiplicador do personagem vale só para estrelas)
+        if (!omniSpawnedThisPhase && Math.random() < CHANCE_OMNI) {
             omniSpawnedThisPhase = true;
             powerupItems.push({
                 type: 'omni',
@@ -1155,7 +1399,7 @@ function generateWorld() {
                 collected: false,
                 oscOffset: Math.random() * Math.PI * 2
             });
-        } else if (Math.random() < 0.07 * srMult) {
+        } else if (Math.random() < CHANCE_POWERUP) {
             let type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
             powerupItems.push({
                 type,
@@ -1171,26 +1415,29 @@ function generateWorld() {
     }
 }
 
+// Pulo: faíscas pastel + um "puf" de nuvem embaixo dos cascos
 function spawnJumpParticles() {
-    for (let i = 0; i < 15; i++) {
-        particles.push({
-            x: player.x + player.w / 2,
-            y: player.y + player.h,
-            vx: (Math.random() - 0.5) * 5,
-            vy: Math.random() * 2,
-            life: 1,
-            color: "#ffffff"
+    const x = player.x + player.w / 2, y = player.y + player.h;
+    for (let i = 0; i < 7; i++) {
+        emitirParticula({
+            x, y, vx: (Math.random() - 0.5) * 6, vy: Math.random() * 2.5,
+            life: 0.8, size: 4 + Math.random() * 3, forma: 'brilho',
+            color: PALETA.particulas[i % PALETA.particulas.length]
         });
+    }
+    for (let i = 0; i < 3; i++) {
+        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira' });
     }
 }
 
 function jump() {
-    if (state !== 'playing') return;
+    if (state !== 'playing' || isPaused) return;
 
     if (isFlying) {
         player.vy = player.jumpPower * 0.8;
-        player.scaleX = 0.7; // Stretch thin
-        player.scaleY = 1.3; // Stretch up
+        player.scaleX = 0.7; // Estica fino
+        player.scaleY = 1.3; // Estica para cima
+        player.podeCortarPulo = false;
         spawnJumpParticles();
         return;
     }
@@ -1199,43 +1446,88 @@ function jump() {
         player.vy = player.jumpPower;
         player.jumps++;
         player.onGround = false;
-        player.scaleX = 0.5; // Extreme stretch 
+        player.coyote = 0;
+        player.bufferPulo = 0;
+        player.podeCortarPulo = true;
+        // Pulo disparado pelo buffer depois que o botão já foi solto: sai baixo (toque rápido = pulo baixo)
+        if (!puloSegurado) { player.vy *= CORTE_PULO; player.podeCortarPulo = false; }
+        isSlamming = false;
+        player.scaleX = 0.5; // Esticada extrema
         player.scaleY = 1.6;
 
-        // Backflip on double jump (or frequent jumps on infjump)
+        // Mortal para trás no pulo duplo (ou a cada 2 pulos no pulo infinito)
         if (player.jumps % 2 === 0) {
             player.spin = -Math.PI * 2;
+            player.giroT = 0;
+            player.giroRapido = false;
         }
 
         playSound('jump');
         checkMission('jumps', 1);
         spawnJumpParticles();
+    } else {
+        // Sem pulos sobrando: guarda o pedido e pula assim que pousar (jump buffer)
+        player.bufferPulo = PASSOS_BUFFER_PULO;
     }
 }
 
+// Botão de pulo está apertado agora? (teclado, toque ou mouse)
+let puloSegurado = false;
+function apertarPulo() {
+    puloSegurado = true;
+    jump();
+}
+
+// Soltar o botão durante a subida corta o pulo (pulo de altura variável)
+function soltarPulo() {
+    puloSegurado = false;
+    if (state !== 'playing' || !player) return;
+    if (player.podeCortarPulo && player.vy < 0 && !isFlying) player.vy *= CORTE_PULO;
+    player.podeCortarPulo = false;
+}
+
+function doDash() {
+    if (state !== 'playing' || isPaused) return;
+    if (dashCooldown > 0 || isDashing) return;
+    isDashing = true;
+    dashTimeLeft = DURACAO_DASH;
+    dashCooldown = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
+    isSlamming = false; // o dash cancela o slam (e o bônus dele)
+    playSound('dash');
+    checkMission('dashes', 1);
+}
+
+function doSlam() {
+    if (state !== 'playing' || isPaused) return;
+    if (player.onGround || dashTimeLeft > 0) return; // não dá slam no chão nem no meio do dash
+    player.vy = VEL_SLAM;
+    player.podeCortarPulo = false;
+    isSlamming = true;
+}
+
+function alternarPausa() {
+    if (state !== 'playing') return;
+    isPaused = !isPaused;
+    pauseMenu.classList.toggle('hidden', !isPaused);
+    mobilePauseBtn.textContent = isPaused ? '▶' : '⏸';
+    if (!isPaused) iniciarLoop();
+}
+
+const TECLAS_PULO = ['Space', 'ArrowUp', 'KeyW'];
+
 window.addEventListener('keydown', (e) => {
     if (state === 'playing') {
-        if (e.code === 'Space' || e.code === 'KeyP' || e.code === 'Escape') {
-            isPaused = !isPaused;
-            if (isPaused) {
-                pauseMenu.classList.remove('hidden');
-            } else {
-                pauseMenu.classList.add('hidden');
-                update(); // Resume the loop
-            }
+        if (e.code === 'KeyP' || e.code === 'Escape') {
+            if (!e.repeat) alternarPausa();
             e.preventDefault();
-        } else if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') {
-            if (!isPaused) jump();
+        } else if (TECLAS_PULO.includes(e.code)) {
+            if (!e.repeat) apertarPulo(); // segurar a tecla não repete o pulo
             e.preventDefault();
-        } else if ((e.code === 'ArrowRight' || e.code === 'KeyD') && dashCooldown <= 0 && !isPaused && !isDashing) {
-            isDashing = true;
-            dashTimeLeft = 0.3; // 300ms
-            dashCooldown = 3.0 * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15)); // 3 secs default, reduced by upgrade
-            playSound('dash');
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+            if (!e.repeat) doDash();
             e.preventDefault();
-        } else if ((e.code === 'ArrowDown' || e.code === 'KeyS') && !player.onGround && !isPaused) {
-            player.vy = 30; // Slam
-            isSlamming = true;
+        } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+            if (!e.repeat) doSlam();
             e.preventDefault();
         }
     } else if (state === 'gameover') {
@@ -1254,81 +1546,66 @@ window.addEventListener('keydown', (e) => {
         }
     }
 });
-// ─────────────────────────────────────────────────────────────────────────
-// MOBILE CONTROLS — Visible buttons for touch devices
-// ─────────────────────────────────────────────────────────────────────────
 
-function doMobileDash() {
-    if (state !== 'playing' || isPaused) return;
-    if (dashCooldown <= 0 && !isDashing) {
-        isDashing = true;
-        dashTimeLeft = 0.3;
-        dashCooldown = 3.0 * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
-        playSound('dash');
-    }
-}
-
-function doMobileSlam() {
-    if (state !== 'playing' || isPaused) return;
-    if (!player.onGround) {
-        player.vy = 30;
-        isSlamming = true;
-    }
-}
-
-function doMobilePause() {
-    if (state !== 'playing') return;
-    isPaused = !isPaused;
-    if (isPaused) {
-        pauseMenu.classList.remove('hidden');
-        mobilePauseBtn.textContent = '▶';
-    } else {
-        pauseMenu.classList.add('hidden');
-        mobilePauseBtn.textContent = '⏸';
-        update();
-    }
-}
-
-// Wire up mobile buttons — use 'click' for broad compatibility
-// 'touchstart' listener added separately with passive:false to allow preventDefault
-mobileJumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, { passive: false });
-mobileDashBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doMobileDash(); }, { passive: false });
-mobileSlamBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doMobileSlam(); }, { passive: false });
-mobilePauseBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doMobilePause(); }, { passive: false });
-
-// Also 'click' for desktop emulation / accessibility
-mobileJumpBtn.addEventListener('click', jump);
-mobileDashBtn.addEventListener('click', doMobileDash);
-mobileSlamBtn.addEventListener('click', doMobileSlam);
-mobilePauseBtn.addEventListener('click', doMobilePause);
-
-// Visual feedback: button press animation
-[mobileJumpBtn, mobileDashBtn, mobileSlamBtn].forEach(btn => {
-    btn.addEventListener('touchstart', () => { btn.style.transform = 'scale(0.88)'; btn.style.opacity = '0.7'; }, { passive: true });
-    ['touchend', 'touchcancel'].forEach(ev =>
-        btn.addEventListener(ev, () => { btn.style.transform = ''; btn.style.opacity = ''; }, { passive: true })
-    );
+window.addEventListener('keyup', (e) => {
+    if (TECLAS_PULO.includes(e.code)) soltarPulo();
 });
 
-// ─── Fallback touch/click on the game area (everything that is NOT a button) ───
-// Listen on document so the whole screen becomes the jump zone.
-// Events that originate from inside #mobile-controls are ignored here.
-document.addEventListener('touchstart', (e) => {
+// Pausa sozinho ao trocar de aba / minimizar
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === 'playing' && !isPaused) alternarPausa();
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// CONTROLES MOBILE — botões visíveis em telas de toque
+// ─────────────────────────────────────────────────────────────────────────
+
+// Pointer events: respondem na hora a toque, mouse e caneta (sem o atraso do 'click')
+// Guardamos quais ponteiros estão segurando o pulo; o pulo só é "solto" quando o último sai.
+const ponteirosPulo = new Set();
+
+function pressionarPuloPonteiro(e) {
+    ponteirosPulo.add(e.pointerId);
+    apertarPulo();
+}
+function liberarPuloPonteiro(e) {
+    if (!ponteirosPulo.delete(e.pointerId)) return;
+    if (ponteirosPulo.size === 0) soltarPulo();
+}
+
+function ligarBotao(btn, acao, ehPulo) {
+    btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.setPointerCapture) btn.setPointerCapture(e.pointerId);
+        btn.style.transform = 'scale(0.88)'; btn.style.opacity = '0.7';
+        if (ehPulo) pressionarPuloPonteiro(e); else acao();
+    });
+    const soltar = (e) => {
+        btn.style.transform = ''; btn.style.opacity = '';
+        if (ehPulo) liberarPuloPonteiro(e);
+    };
+    btn.addEventListener('pointerup', soltar);
+    btn.addEventListener('pointercancel', soltar);
+}
+ligarBotao(mobileJumpBtn, null, true);
+ligarBotao(mobileDashBtn, doDash, false);
+ligarBotao(mobileSlamBtn, doSlam, false);
+mobilePauseBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); alternarPausa(); });
+
+// ─── Toque/clique no resto da tela (tudo que NÃO é botão nem menu) também pula ───
+document.addEventListener('pointerdown', (e) => {
     if (state !== 'playing' || isPaused) return;
-    if (e.target.closest && e.target.closest('#mobile-controls')) return; // button handled it
-    jump();
+    if (e.target.closest && (e.target.closest('#mobile-controls') || e.target.closest('.ui-panel'))) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
-}, { passive: false });
-
-document.addEventListener('mousedown', (e) => {
-    if (state !== 'playing' || isPaused) return;
-    if (e.target.closest && e.target.closest('#mobile-controls')) return;
-    if (e.target.closest && e.target.closest('.ui-panel')) return; // ignore menus
-    jump();
+    pressionarPuloPonteiro(e);
 });
+document.addEventListener('pointerup', liberarPuloPonteiro);
+document.addEventListener('pointercancel', liberarPuloPonteiro);
 
 function createPlayerParticle() {
-    particles.push({
+    emitirParticula({
         x: player.x,
         y: player.y + player.h - 10 + (Math.random() * 10 - 5),
         vx: -Math.random() * 2 - 1,
@@ -1340,30 +1617,82 @@ function createPlayerParticle() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// UNICORN VISUAL ENGINE v4 — Correct proportions
-// Physics, rig, hitbox: 100% UNCHANGED
+// RIG E POSE COMUNS A TODOS OS PERSONAGENS
 // ─────────────────────────────────────────────────────────────────────────
+
+// Cache de gradientes: gradientes do canvas usam o sistema de coordenadas do momento do desenho,
+// então podem ser criados uma vez (em coordenadas locais) e reaproveitados em todo frame.
+const cacheGradientes = new Map();
+function gradCache(chave, criar) {
+    let g = cacheGradientes.get(chave);
+    if (!g) { g = criar(); cacheGradientes.set(chave, g); }
+    return g;
+}
+
+// Atualiza a pose do personagem a cada passo da física (não depende do FPS)
+function atualizarPose(p, vel) {
+    // Patas no ritmo da velocidade real do jogo (aceleram no dash, desaceleram no slow-mo)
+    if (p.onGround) p.runPhase += Math.min(vel * FATOR_CORRIDA, MAX_PASSO_CORRIDA);
+    if (p.pouso) { p.pouso.t++; if (p.pouso.t > PASSOS_POUSO) p.pouso = null; }
+
+    // Mistura suave entre a corrida (0) e a pose aérea (1)
+    const alvoMistura = (p.onGround && !isFlying) ? 0 : 1;
+    p.mistura += (alvoMistura - p.mistura) * 0.25;
+
+    // Pose aérea: subindo encolhe as patas da frente e estica as de trás; caindo, abre para pousar
+    let ar;
+    if (isFlying) ar = { fl: -20, fr: -10, bl: 20, br: 10 };
+    else if (p.vy < 0) ar = { fl: -55, fr: -35, bl: 40, br: 25 };
+    else if (p.vy > 4) ar = { fl: -15, fr: -5, bl: -10, br: 5 };
+    else ar = { fl: -35, fr: -15, bl: 25, br: 5 };
+    for (const k in ar) p.poseAr[k] += (ar[k] - p.poseAr[k]) * 0.2;
+
+    // Rotação suavizada (antes pulava direto ao sair do chão)
+    const alvoRot = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
+    p.rot += (alvoRot - p.rot) * 0.3;
+
+    // Piscar com intervalo aleatório
+    p.piscar--;
+    if (p.piscar < -8) p.piscar = 120 + Math.random() * 200;
+}
+
+function posePernas(p, amp) {
+    const t = p.runPhase, m = p.mistura, a = p.poseAr, c = (1 - m) * amp;
+    return {
+        fl: Math.sin(t) * c + a.fl * m,
+        fr: Math.sin(t + Math.PI) * c + a.fr * m,
+        bl: Math.sin(t + Math.PI * 0.5) * c + a.bl * m,
+        br: Math.sin(t + Math.PI * 1.5) * c + a.br * m
+    };
+}
+
+// Posiciona o personagem: rotação, squash/stretch ancorado nos pés e quique da corrida.
+// Deve ser chamado logo após ctx.save().
+function aplicarRig(ctx, p, balanco) {
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    if (p.hurtFrames > 0 && Math.floor(p.hurtFrames / 4) % 2 === 0) ctx.globalAlpha = 0.35; // pisca ao levar dano
+    ctx.rotate(p.rot + p.spin);
+    ctx.translate(0, p.h / 2);
+    ctx.scale(p.scaleX, p.scaleY);
+    ctx.translate(0, -p.h / 2);
+    ctx.scale(p.w / 50, p.h / 40);   // escala visual (gigante / minúsculo)
+    // Quique: dois por ciclo de passada, sempre para cima (não afunda os cascos na plataforma)
+    ctx.translate(0, -Math.abs(Math.sin(p.runPhase)) * balanco * (1 - p.mistura));
+    ctx.scale(1.3, 1.3);
+}
+
+const estaSorrindo = (p) => !p.onGround || isFlying || p.sorriso > 0;
+const estaPiscando = (p) => p.piscar < 0 || p.assustado;
 
 // ─────────────────────────────────────────────────────────────────────────
 // DRAGON CHARACTER — Scaly, winged, fire-breathing beast
 // ─────────────────────────────────────────────────────────────────────────
 function drawDragon(ctx, p) {
     ctx.save();
-    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
-    let yOffset = p.onGround ? Math.sin(frames * 0.8) * 2 : 0;
-    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
-    if (p.spin !== 0) rotation += p.spin;
-    ctx.rotate(rotation);
-    ctx.scale(p.scaleX, p.scaleY);
-    ctx.scale(p.w / 50, p.h / 40);
-    ctx.translate(0, yOffset);
-    ctx.scale(1.3, 1.3);
+    aplicarRig(ctx, p, 2);
 
-    let runTime = p.onGround ? frames * 0.55 : 0;
-    let legFL = p.onGround ? Math.sin(runTime) * 30 : -25;
-    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 30 : 8;
-    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 30 : 28;
-    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 30 : -8;
+    const pernas = posePernas(p, 30);
+    let legFL = pernas.fl, legFR = pernas.fr, legBL = pernas.bl, legBR = pernas.br;
     let tailWave = Math.sin(frames * 0.3) * 12;
     let wingFlap = isFlying ? Math.sin(frames * 0.6) * 22 : Math.sin(frames * 0.25) * 5;
 
@@ -1371,9 +1700,11 @@ function drawDragon(ctx, p) {
     const body = sc[1], bodyL = sc[2], bodyD = sc[0], bodyLL = sc[3];
 
     function scalyGrad(hx, hy, cx, cy, r) {
-        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
-        g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.7, body); g.addColorStop(1, bodyD);
-        return g;
+        return gradCache(`dr|${hx}|${hy}|${cx}|${cy}|${r}`, () => {
+            let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+            g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.7, body); g.addColorStop(1, bodyD);
+            return g;
+        });
     }
 
     // TAIL — thick spiky dragon tail
@@ -1400,9 +1731,11 @@ function drawDragon(ctx, p) {
     ctx.globalAlpha = 0.65;
     function drawDragonLeg(lx, ly, angle, col) {
         ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
-        let lg = ctx.createRadialGradient(-4, 6, 0, 0, 12, 12);
-        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
-        ctx.fillStyle = lg;
+        ctx.fillStyle = gradCache('dr|perna', () => {
+            let lg = ctx.createRadialGradient(-4, 6, 0, 0, 12, 12);
+            lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+            return lg;
+        });
         ctx.beginPath(); ctx.ellipse(0, 8, 5, 10, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = bodyD;
         ctx.beginPath(); ctx.ellipse(0, 18, 4, 8, 0.1, 0, Math.PI * 2); ctx.fill();
@@ -1470,7 +1803,7 @@ function drawDragon(ctx, p) {
 
     // HEAD
     ctx.save();
-    ctx.translate(14, -12 + (p.onGround ? Math.sin(frames * 0.8) * 1 : 0));
+    ctx.translate(14, -12 - Math.abs(Math.cos(p.runPhase)) * (1 - p.mistura));
     // Neck
     let nkG = ctx.createLinearGradient(-8, 12, 4, -12);
     nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
@@ -1538,39 +1871,31 @@ function drawDragon(ctx, p) {
 // ─────────────────────────────────────────────────────────────────────────
 function drawCat(ctx, p) {
     ctx.save();
-    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
-    let yOffset = p.onGround ? Math.sin(frames * 0.8) * 2 : 0;
-    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
-    if (p.spin !== 0) rotation += p.spin;
-    ctx.rotate(rotation);
-    ctx.scale(p.scaleX, p.scaleY);
-    ctx.scale(p.w / 50, p.h / 40);
-    ctx.translate(0, yOffset);
-    ctx.scale(1.3, 1.3);
+    aplicarRig(ctx, p, 2);
 
-    let runTime = p.onGround ? frames * 0.65 : 0;
-    let legFL = p.onGround ? Math.sin(runTime) * 32 : -28;
-    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 32 : 9;
-    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 32 : 30;
-    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 32 : -9;
+    const pernas = posePernas(p, 32);
+    let legFL = pernas.fl, legFR = pernas.fr, legBL = pernas.bl, legBR = pernas.br;
     let tailWave = Math.sin(frames * 0.35) * 14;
-    let tailTip = Math.sin(frames * 0.55) * 10;
-    let isBlinking = frames % 160 < 8;
-    let isSmiling = !p.onGround || isFlying || score > 500;
+    let isBlinking = estaPiscando(p);
+    let isSmiling = estaSorrindo(p);
 
     const body = '#ffaadd', bodyL = '#ffd0ee', bodyD = '#dd77bb', bodyLL = '#fff0f8';
 
     function catGrad(hx, hy, cx, cy, r) {
-        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
-        g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.75, body); g.addColorStop(1, bodyD);
-        return g;
+        return gradCache(`gt|${hx}|${hy}|${cx}|${cy}|${r}`, () => {
+            let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+            g.addColorStop(0, bodyLL); g.addColorStop(0.4, bodyL); g.addColorStop(0.75, body); g.addColorStop(1, bodyD);
+            return g;
+        });
     }
 
     function drawCatLeg(lx, ly, angle) {
         ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
-        let lg = ctx.createRadialGradient(-3, 5, 0, 0, 11, 11);
-        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
-        ctx.fillStyle = lg;
+        ctx.fillStyle = gradCache('gt|perna', () => {
+            let lg = ctx.createRadialGradient(-3, 5, 0, 0, 11, 11);
+            lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+            return lg;
+        });
         ctx.beginPath(); ctx.ellipse(0, 8, 5, 10, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = bodyD;
         ctx.beginPath(); ctx.ellipse(0, 18, 4.5, 7, 0, 0, Math.PI * 2); ctx.fill();
@@ -1618,7 +1943,7 @@ function drawCat(ctx, p) {
 
     // HEAD
     ctx.save();
-    ctx.translate(14, -12 + (p.onGround ? Math.sin(frames * 0.8) * 1.5 : 0));
+    ctx.translate(14, -12 - Math.abs(Math.cos(p.runPhase)) * 1.5 * (1 - p.mistura));
     // Neck
     let nkG = ctx.createLinearGradient(-9, 12, 4, -12);
     nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
@@ -1700,39 +2025,32 @@ function drawCat(ctx, p) {
 // ─────────────────────────────────────────────────────────────────────────
 function drawRabbit(ctx, p) {
     ctx.save();
-    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
-    let yOffset = p.onGround ? Math.sin(frames * 0.9) * 2 : 0;
-    let rotation = p.onGround ? Math.sin(frames * 0.4) * 0.03 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
-    if (p.spin !== 0) rotation += p.spin;
-    ctx.rotate(rotation);
-    ctx.scale(p.scaleX, p.scaleY);
-    ctx.scale(p.w / 50, p.h / 40);
-    ctx.translate(0, yOffset);
-    ctx.scale(1.3, 1.3);
+    aplicarRig(ctx, p, 2.5);
 
-    let runTime = p.onGround ? frames * 0.7 : 0;
-    let legFL = p.onGround ? Math.sin(runTime) * 36 : -30;
-    let legFR = p.onGround ? Math.sin(runTime + Math.PI) * 36 : 10;
-    let legBL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 36 : 34;
-    let legBR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 36 : -10;
+    const pernas = posePernas(p, 36);
+    let legFL = pernas.fl, legFR = pernas.fr, legBL = pernas.bl, legBR = pernas.br;
     let earWave = Math.sin(frames * 0.28) * 6 + (p.onGround ? 0 : Math.sin(frames * 0.7) * 12);
-    let isBlinking = frames % 140 < 8;
-    let isSmiling = !p.onGround || isFlying || score > 300;
+    let isBlinking = estaPiscando(p);
+    let isSmiling = estaSorrindo(p);
 
     const body = '#f4f4f4', bodyL = '#ffffff', bodyD = '#cccccc', bodyDeep = '#aaaaaa';
     const accent = '#ffbbcc'; // pink accents
 
     function rabbitGrad(hx, hy, cx, cy, r) {
-        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
-        g.addColorStop(0, bodyL); g.addColorStop(0.4, body); g.addColorStop(0.75, bodyD); g.addColorStop(1, bodyDeep);
-        return g;
+        return gradCache(`co|${hx}|${hy}|${cx}|${cy}|${r}`, () => {
+            let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+            g.addColorStop(0, bodyL); g.addColorStop(0.4, body); g.addColorStop(0.75, bodyD); g.addColorStop(1, bodyDeep);
+            return g;
+        });
     }
 
     function drawRabbitLeg(lx, ly, angle, isFront) {
         ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle * Math.PI / 180);
-        let lg = ctx.createRadialGradient(-4, 5, 0, 0, 12, 14);
-        lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
-        ctx.fillStyle = lg;
+        ctx.fillStyle = gradCache('co|perna', () => {
+            let lg = ctx.createRadialGradient(-4, 5, 0, 0, 12, 14);
+            lg.addColorStop(0, bodyL); lg.addColorStop(1, bodyD);
+            return lg;
+        });
         // Rabbits have big chunky hind legs
         let ew = isFront ? 5 : 7, eh = isFront ? 10 : 13;
         ctx.beginPath(); ctx.ellipse(0, eh * 0.7, ew, eh, 0, 0, Math.PI * 2); ctx.fill();
@@ -1772,7 +2090,7 @@ function drawRabbit(ctx, p) {
 
     // HEAD
     ctx.save();
-    ctx.translate(14, -13 + (p.onGround ? Math.sin(frames * 0.8) * 1.5 : 0));
+    ctx.translate(14, -13 - Math.abs(Math.cos(p.runPhase)) * 1.5 * (1 - p.mistura));
     // Neck
     let nkG = ctx.createLinearGradient(-9, 14, 4, -12);
     nkG.addColorStop(0, bodyD); nkG.addColorStop(0.5, body); nkG.addColorStop(1, bodyL);
@@ -1860,23 +2178,24 @@ function drawRabbit(ctx, p) {
 }
 
 
-function shadeLighter(col, amount) {
-    if (!col || col.startsWith('rgba') || col.startsWith('rgb')) return col || '#fff';
-    try {
+// Cores clareadas/escurecidas ficam em cache (antes eram recalculadas em todo frame)
+const cacheCores = new Map();
+function _ajustarCor(col, amount, fallback) {
+    if (!col || col.startsWith('rgba') || col.startsWith('rgb')) return col || fallback;
+    const chave = col + '|' + amount;
+    let res = cacheCores.get(chave);
+    if (res === undefined) {
         let r = parseInt(col.slice(1, 3), 16), g = parseInt(col.slice(3, 5), 16), b = parseInt(col.slice(5, 7), 16);
-        return `rgb(${Math.min(255, r + amount)},${Math.min(255, g + amount)},${Math.min(255, b + amount)})`;
-    } catch (e) { return col; }
+        const lim = v => Math.max(0, Math.min(255, v + amount));
+        res = isNaN(r + g + b) ? col : `rgb(${lim(r)},${lim(g)},${lim(b)})`;
+        cacheCores.set(chave, res);
+    }
+    return res;
 }
-function shadeDarker(col, amount) {
-    if (!col || col.startsWith('rgba') || col.startsWith('rgb')) return col || '#000';
-    try {
-        let r = parseInt(col.slice(1, 3), 16), g = parseInt(col.slice(3, 5), 16), b = parseInt(col.slice(5, 7), 16);
-        return `rgb(${Math.max(0, r - amount)},${Math.max(0, g - amount)},${Math.max(0, b - amount)})`;
-    } catch (e) { return col; }
-}
+function shadeLighter(col, amount) { return _ajustarCor(col, amount, '#fff'); }
+function shadeDarker(col, amount) { return _ajustarCor(col, -amount, '#000'); }
 
-// PS2-style leg — organic rounded shapes with Gouraud-like radial shading
-// pivot/rotation logic: 100% UNCHANGED
+// Perna estilo PS2 — formas arredondadas com sombreamento radial (gradientes em cache)
 function drawLeg(ctx, x, y, w, h, angleDeg, color) {
     ctx.save();
     ctx.translate(x, y);
@@ -1885,32 +2204,34 @@ function drawLeg(ctx, x, y, w, h, angleDeg, color) {
     const lw = w;
     const light = shadeLighter(color, 70);
     const dark = shadeDarker(color, 50);
+    const k = `leg|${color}|${w}|${h}|`;
 
-    // Upper thigh — rounded ellipse with radial 3D shading
-    let thighG = ctx.createRadialGradient(-lw * 0.3, h * 0.07, 0, 0, h * 0.22, lw * 1.5);
-    thighG.addColorStop(0, light);
-    thighG.addColorStop(0.45, color);
-    thighG.addColorStop(1, dark);
-    ctx.fillStyle = thighG;
+    // Coxa — elipse com sombreamento 3D
+    ctx.fillStyle = gradCache(k + 'coxa', () => {
+        let g = ctx.createRadialGradient(-lw * 0.3, h * 0.07, 0, 0, h * 0.22, lw * 1.5);
+        g.addColorStop(0, light); g.addColorStop(0.45, color); g.addColorStop(1, dark);
+        return g;
+    });
     ctx.beginPath();
     ctx.ellipse(0, h * 0.22, lw, h * 0.27, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Knee cap — subtle rounded bump
-    let kneeG = ctx.createRadialGradient(-lw * 0.2, h * 0.50, 0, 0, h * 0.52, lw * 0.9);
-    kneeG.addColorStop(0, light);
-    kneeG.addColorStop(1, dark);
-    ctx.fillStyle = kneeG;
+    // Joelho
+    ctx.fillStyle = gradCache(k + 'joelho', () => {
+        let g = ctx.createRadialGradient(-lw * 0.2, h * 0.50, 0, 0, h * 0.52, lw * 0.9);
+        g.addColorStop(0, light); g.addColorStop(1, dark);
+        return g;
+    });
     ctx.beginPath();
     ctx.ellipse(0, h * 0.52, lw * 0.62, lw * 0.52, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Lower shin — tapered
-    let shinG = ctx.createLinearGradient(-lw, h * 0.52, lw, h * 0.52);
-    shinG.addColorStop(0, dark);
-    shinG.addColorStop(0.35, light);
-    shinG.addColorStop(1, dark);
-    ctx.fillStyle = shinG;
+    // Canela — afinando
+    ctx.fillStyle = gradCache(k + 'canela', () => {
+        let g = ctx.createLinearGradient(-lw, h * 0.52, lw, h * 0.52);
+        g.addColorStop(0, dark); g.addColorStop(0.35, light); g.addColorStop(1, dark);
+        return g;
+    });
     ctx.beginPath();
     ctx.moveTo(-lw * 0.54, h * 0.50);
     ctx.lineTo(lw * 0.54, h * 0.50);
@@ -1926,11 +2247,11 @@ function drawLeg(ctx, x, y, w, h, angleDeg, color) {
     ctx.fill();
 
     // Hoof — rounded, dark, solid
-    let hoofG = ctx.createLinearGradient(-lw * 0.45, h * 0.88, lw * 0.45, h * 1.1);
-    hoofG.addColorStop(0, '#3a3042');
-    hoofG.addColorStop(0.4, '#2a2030');
-    hoofG.addColorStop(1, '#14101a');
-    ctx.fillStyle = hoofG;
+    ctx.fillStyle = gradCache(`casco|${w}|${h}`, () => {
+        let g = ctx.createLinearGradient(-lw * 0.45, h * 0.88, lw * 0.45, h * 1.1);
+        g.addColorStop(0, '#3a3042'); g.addColorStop(0.4, '#2a2030'); g.addColorStop(1, '#14101a');
+        return g;
+    });
     ctx.beginPath();
     ctx.moveTo(-lw * 0.45, h * 0.88);
     ctx.lineTo(lw * 0.45, h * 0.88);
@@ -1945,47 +2266,22 @@ function drawLeg(ctx, x, y, w, h, angleDeg, color) {
 function drawUnicorn(ctx, p) {
     let c = p.char;
     ctx.save();
+    aplicarRig(ctx, p, 3);
+    const aBase = ctx.globalAlpha;               // < 1 enquanto pisca por dano
+    const alfa = (v) => { ctx.globalAlpha = aBase * v; };
 
-    // ── RIG ANCHOR (unchanged) ──
-    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    // ── EXPRESSÕES (ligadas a eventos) ──
+    let isBlinking = estaPiscando(p);
+    let isSmiling = estaSorrindo(p);
 
-    // ── PHYSICS TRANSFORMS (unchanged) ──
-    let yOffset = p.onGround ? Math.sin(frames * 0.8) * 3 : 0;
-    let rotation = 0;
-    if (p.onGround) {
-        rotation = Math.sin(frames * 0.4) * 0.05;
-    } else {
-        rotation = p.vy * 0.03;
-        rotation = Math.max(-0.3, Math.min(0.4, rotation));
-    }
-    if (p.spin !== 0) rotation += p.spin;
-    ctx.rotate(rotation);
-    ctx.scale(p.scaleX, p.scaleY);   // squash & stretch — UNCHANGED
-    ctx.scale(p.w / 50, p.h / 40);   // Visual scale for giant/shrink powerups
-    ctx.translate(0, yOffset);
-    ctx.scale(1.3, 1.3);
-
-    // ── EXPRESSIONS (unchanged logic) ──
-    let runTime = p.onGround ? frames * 0.6 : 0;
-    let isBlinking = (frames % 180 < 10);
-    let isSmiling = (!p.onGround || isFlying || score > 1000);
-
-    // ── WALK CYCLE (unchanged math) ──
-    let legFrontL = p.onGround ? Math.sin(runTime) * 35 : -30;
-    let legFrontR = p.onGround ? Math.sin(runTime + Math.PI) * 35 : 10;
-    let legBackL = p.onGround ? Math.sin(runTime + Math.PI * 0.5) * 35 : 30;
-    let legBackR = p.onGround ? Math.sin(runTime + Math.PI * 1.5) * 35 : -10;
-
-    if (isFlying) {
-        legFrontL = -20; legFrontR = -10; legBackL = 20; legBackR = 10;
-        ctx.shadowColor = '#aaddff';
-        ctx.shadowBlur = 18;
-    }
+    // ── CICLO DE CORRIDA (ritmo da velocidade) + pose aérea suavizada ──
+    const pernas = posePernas(p, 35);
+    let legFrontL = pernas.fl, legFrontR = pernas.fr, legBackL = pernas.bl, legBackR = pernas.br;
 
     let bColor = c.body || '#ffffff';
     let maneCols = c.mane || ['#ff007f', '#00f0ff'];
     let ghost = (c.id === 8);
-    if (ghost) ctx.globalAlpha = 0.72;
+    if (ghost) alfa(0.72);
 
     const bodyLight = shadeLighter(bColor, 75);
     const bodyMid = bColor;
@@ -1997,34 +2293,38 @@ function drawUnicorn(ctx, p) {
     // Smooth Gouraud-like radial body gradient
     function bGrad(hx, hy, cx, cy, r) {
         if (ghost) return bColor;
-        let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
-        g.addColorStop(0, bodyLight);
-        g.addColorStop(0.38, bodyMid);
-        g.addColorStop(0.72, bodySh);
-        g.addColorStop(1, bodyDeep);
-        return g;
+        return gradCache(`uc|${bColor}|${hx}|${hy}|${cx}|${cy}|${r}`, () => {
+            let g = ctx.createRadialGradient(hx, hy, 0, cx, cy, r);
+            g.addColorStop(0, bodyLight);
+            g.addColorStop(0.38, bodyMid);
+            g.addColorStop(0.72, bodySh);
+            g.addColorStop(1, bodyDeep);
+            return g;
+        });
     }
-    // Mane/tail gradient
+    // Gradiente da crina/cauda
     function mGrad(x0, y0, x1, y1) {
-        let g = ctx.createLinearGradient(x0, y0, x1, y1);
-        g.addColorStop(0, shadeLighter(mane0, 45));
-        g.addColorStop(0.45, mane0);
-        g.addColorStop(1, mane1);
-        return g;
+        return gradCache(`um|${mane0}|${mane1}|${x0}|${y0}|${x1}|${y1}`, () => {
+            let g = ctx.createLinearGradient(x0, y0, x1, y1);
+            g.addColorStop(0, shadeLighter(mane0, 45));
+            g.addColorStop(0.45, mane0);
+            g.addColorStop(1, mane1);
+            return g;
+        });
     }
 
     const tailWave = Math.sin(frames * 0.28) * 10;
     const tailWave2 = Math.sin(frames * 0.44 + 1.1) * 6;
     const maneWave = Math.sin(frames * 0.35) * 5;
-    const headBob = p.onGround ? Math.sin(frames * 0.8) * 1.5 : 0;
+    const headBob = -Math.abs(Math.cos(p.runPhase)) * 1.5 * (1 - p.mistura); // cabeça no ritmo do passo
 
     // ═══════════════════════════════════════════════
-    // LAYER 1 — REAR LEGS (behind torso — slightly dim)
+    // CAMADA 1 — PATAS DE TRÁS (atrás do corpo — opacas, só mais escuras)
     // ═══════════════════════════════════════════════
-    ctx.globalAlpha = ghost ? 0.35 : 0.65;
-    drawLeg(ctx, -11, 12, 6.5, 22, legBackR, bodySh);
-    drawLeg(ctx, 8, 12, 6.5, 22, legFrontR, bodySh);
-    ctx.globalAlpha = ghost ? 0.72 : 1.0;
+    alfa(ghost ? 0.35 : 1.0);
+    drawLeg(ctx, -11, 12, 6.5, 22, legBackR, bodyDeep);
+    drawLeg(ctx, 8, 12, 6.5, 22, legFrontR, bodyDeep);
+    alfa(ghost ? 0.72 : 1.0);
 
     // ═══════════════════════════════════════════════
     // LAYER 2 — TAIL (flowing bezier strands)
@@ -2038,7 +2338,7 @@ function drawUnicorn(ctx, p) {
     ctx.quadraticCurveTo(-18, 10, -17, 5);
     ctx.fill();
     // Strand 2 — mid
-    ctx.globalAlpha = ghost ? 0.6 : 0.88;
+    alfa(ghost ? 0.6 : 0.88);
     ctx.fillStyle = mGrad(-38, -6, -10, 22);
     ctx.beginPath();
     ctx.moveTo(-16, 3);
@@ -2047,14 +2347,14 @@ function drawUnicorn(ctx, p) {
     ctx.closePath();
     ctx.fill();
     // Strand 3 — front wisp
-    ctx.globalAlpha = ghost ? 0.45 : 0.6;
+    alfa(ghost ? 0.45 : 0.6);
     ctx.fillStyle = mGrad(-28, -4, -8, 15);
     ctx.beginPath();
     ctx.moveTo(-15, 1);
     ctx.quadraticCurveTo(-30, -1 + tailWave, -24, 12 + tailWave);
     ctx.quadraticCurveTo(-18, 18 + tailWave, -14, 8);
     ctx.fill();
-    ctx.globalAlpha = ghost ? 0.72 : 1.0;
+    alfa(ghost ? 0.72 : 1.0);
 
     // ═══════════════════════════════════════════════
     // LAYER 3 — BODY (3 overlapping ellipses — PS2 mass)
@@ -2103,11 +2403,11 @@ function drawUnicorn(ctx, p) {
     ctx.translate(14, -13 + headBob);
 
     // NECK — elongated smooth trapezoid
-    let nkG = ctx.createLinearGradient(-10, 14, 5, -14);
-    nkG.addColorStop(0, bodySh);
-    nkG.addColorStop(0.45, bodyMid);
-    nkG.addColorStop(1, bodyLight);
-    ctx.fillStyle = nkG;
+    ctx.fillStyle = gradCache(`un|${bColor}`, () => {
+        let g = ctx.createLinearGradient(-10, 14, 5, -14);
+        g.addColorStop(0, bodySh); g.addColorStop(0.45, bodyMid); g.addColorStop(1, bodyLight);
+        return g;
+    });
     ctx.beginPath();
     ctx.moveTo(-9, 14);
     ctx.quadraticCurveTo(-14, 4, -13, -3);
@@ -2134,7 +2434,7 @@ function drawUnicorn(ctx, p) {
     ctx.closePath();
     ctx.fill();
     // Mid strand
-    ctx.globalAlpha = ghost ? 0.6 : 0.82;
+    alfa(ghost ? 0.6 : 0.82);
     ctx.fillStyle = mGrad(0, -16, -16, 8);
     ctx.beginPath();
     ctx.moveTo(-1, -14);
@@ -2142,7 +2442,7 @@ function drawUnicorn(ctx, p) {
     ctx.bezierCurveTo(-12, 16 + maneWave * 0.7, -4, 12, -2, 4);
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = ghost ? 0.72 : 1.0;
+    alfa(ghost ? 0.72 : 1.0);
     // Forelock (small front tuft over forehead)
     ctx.fillStyle = mGrad(4, -15, -2, -8);
     ctx.beginPath();
@@ -2198,11 +2498,11 @@ function drawUnicorn(ctx, p) {
     ctx.shadowColor = hornCol;
     ctx.shadowBlur = 12 + Math.sin(frames * 0.08) * 4;
     // Main horn face
-    let hG = ctx.createLinearGradient(5, -14, 10, -37);
-    hG.addColorStop(0, shadeDarker(hornCol, 20));
-    hG.addColorStop(0.6, hornCol);
-    hG.addColorStop(1, '#ffffff');
-    ctx.fillStyle = hG;
+    ctx.fillStyle = gradCache(`uh|${hornCol}`, () => {
+        let g = ctx.createLinearGradient(5, -14, 10, -37);
+        g.addColorStop(0, shadeDarker(hornCol, 20)); g.addColorStop(0.6, hornCol); g.addColorStop(1, '#ffffff');
+        return g;
+    });
     ctx.beginPath();
     ctx.moveTo(4, -14); ctx.lineTo(10, -37); ctx.lineTo(13, -13);
     ctx.closePath(); ctx.fill();
@@ -2223,7 +2523,14 @@ function drawUnicorn(ctx, p) {
     ctx.restore();
 
     // EYE — large Pixar/PS2 expressive eye
-    if (c.id === 9) {
+    if (p.assustado) {
+        // Olho em "X" na animação de morte
+        ctx.strokeStyle = '#1a0a2a'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(3, -11); ctx.lineTo(9, -5);
+        ctx.moveTo(9, -11); ctx.lineTo(3, -5);
+        ctx.stroke();
+    } else if (c.id === 9) {
         // Cyborg glowing lens
         ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 8;
         ctx.fillStyle = '#cc0000';
@@ -2272,7 +2579,11 @@ function drawUnicorn(ctx, p) {
     // MOUTH / SMILE
     ctx.strokeStyle = bodyDeep;
     ctx.lineWidth = 1.6; ctx.lineCap = 'round';
-    if (isSmiling) {
+    if (p.assustado) {
+        // Boca em "O" de susto
+        ctx.fillStyle = '#441122';
+        ctx.beginPath(); ctx.ellipse(16.5, 4, 2.2, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (isSmiling) {
         ctx.beginPath();
         ctx.moveTo(13, 3); ctx.quadraticCurveTo(16, 7, 20, 2);
         ctx.stroke();
@@ -2299,7 +2610,7 @@ function drawUnicorn(ctx, p) {
     // ═══════════════════════════════════════════════
     if (isFlying) {
         let flap = Math.sin(frames * 0.55) * 16;
-        ctx.shadowColor = '#aae8ff'; ctx.shadowBlur = 20;
+        // (sem shadowBlur: o brilho do voo agora é um gradiente único desenhado atrás do personagem)
         ctx.fillStyle = 'rgba(210,240,255,0.85)';
         ctx.beginPath();
         ctx.moveTo(2, -6);
@@ -2328,9 +2639,13 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
 
     ctx.save();
     ctx.translate(x, y + bob);
+    // brilho pré-desenhado (sprite) no lugar do shadowBlur
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const tg = sz * (3 + Math.sin(t * 2) * 0.5);
+    ctx.drawImage(spriteLuz(st.glow), -tg / 2, -tg / 2, tg, tg);
+    ctx.restore();
     ctx.rotate(t * 0.5);
-    ctx.shadowColor = st.glow;
-    ctx.shadowBlur = 15 + Math.sin(t * 2) * 6;
 
     // Gradiente radial para visual rico
     let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, sz);
@@ -2386,14 +2701,20 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
     }
 }
 
-function drawPowerupItem(ctx, pu, t) {
+function drawPowerupItem(ctx, pu, t, offsetX) {
     if (pu.collected) return;
-    const x = pu.x;
+    const x = pu.x - offsetX;
     const y = pu.y + Math.sin(t * 1.4) * 7;
     ctx.save();
     ctx.translate(x, y);
 
-    const STYLES = {
+    const s = ESTILOS_POWERUP[pu.type];
+    const r = s.r;
+    desenharPowerupInterno(ctx, s, r, t);
+    ctx.restore();
+}
+
+const ESTILOS_POWERUP = {
         magnet: { glow: '#ff44aa', label: '🧲', bg1: '#cc2288', bg2: '#ff88cc', r: 19 },
         shield: { glow: '#44ccff', label: '🛡', bg1: '#0066aa', bg2: '#88ddff', r: 19 },
         bonus: { glow: '#ffff00', label: '✨', bg1: '#aa8800', bg2: '#ffff44', r: 19 },
@@ -2412,19 +2733,23 @@ function drawPowerupItem(ctx, pu, t) {
         rainbow: { glow: '#ff00ff', label: '🌈', bg1: '#ff0000', bg2: '#0000ff', r: 22 },
         jackpot: { glow: '#ffaa00', label: '🎰', bg1: '#bb6600', bg2: '#ffaa00', r: 22 },
         omni: { glow: '#ffffff', label: '🌟', bg1: '#ff00ff', bg2: '#00ffff', r: 24 }
-    };
-    const s = STYLES[pu.type];
-    const r = s.r;
+};
 
-    // Outer glow pulse
-    ctx.shadowColor = s.glow;
-    ctx.shadowBlur = 16 + Math.sin(t * 2) * 6;
+function desenharPowerupInterno(ctx, s, r, t) {
+    // Brilho pulsante (sprite, sem shadowBlur)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const tg = r * (3.2 + Math.sin(t * 2) * 0.4);
+    ctx.drawImage(spriteLuz(s.glow), -tg / 2, -tg / 2, tg, tg);
+    ctx.restore();
 
     // Background circle
-    let bg = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
-    bg.addColorStop(0, s.bg2);
-    bg.addColorStop(1, s.bg1);
-    ctx.fillStyle = bg;
+    ctx.fillStyle = gradCache(`pu|${s.bg1}|${s.bg2}|${r}`, () => {
+        let bg = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+        bg.addColorStop(0, s.bg2);
+        bg.addColorStop(1, s.bg1);
+        return bg;
+    });
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
@@ -2432,7 +2757,6 @@ function drawPowerupItem(ctx, pu, t) {
     // Bright rim
     ctx.strokeStyle = s.glow;
     ctx.lineWidth = 2.5;
-    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
     ctx.stroke();
@@ -2444,8 +2768,6 @@ function drawPowerupItem(ctx, pu, t) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(s.label, 0, 1);
-
-    ctx.restore();
 }
 
 // Draws the shield ring around the player when shield is active
@@ -2456,28 +2778,25 @@ function drawShieldRing(ctx, p) {
     let pulse = 1 + Math.sin(frames * 0.12) * 0.06;
     let r = 38 * pulse;
     ctx.save();
-    // Outer glow
-    ctx.shadowColor = '#44ccff';
-    ctx.shadowBlur = 18;
-    // Rotating arc segments
-    ctx.strokeStyle = 'rgba(100,220,255,0.88)';
-    ctx.lineWidth = 3;
-    let rot = frames * 0.04;
-    for (let i = 0; i < 4; i++) {
-        let a = rot + (i / 4) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, a, a + Math.PI * 0.38);
-        ctx.stroke();
-    }
-    // Inner soft fill
-    let grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grd.addColorStop(0, 'rgba(100,220,255,0.06)');
-    grd.addColorStop(1, 'rgba(100,220,255,0.18)');
-    ctx.fillStyle = grd;
+    // Bolha: preenchimento suave
+    ctx.fillStyle = 'rgba(155,231,255,0.12)';
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
+    // Arcos girando: traço largo e translúcido por baixo faz o "brilho" (sem shadowBlur)
+    let rot = frames * 0.04;
+    for (const [larg, cor] of [[9, 'rgba(155,231,255,0.25)'], [3, 'rgba(210,245,255,0.95)']]) {
+        ctx.strokeStyle = cor; ctx.lineWidth = larg; ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+            let a = rot + (i / 4) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, a, a + Math.PI * 0.38);
+            ctx.stroke();
+        }
+    }
+    // reflexo
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.75, Math.PI * 1.1, Math.PI * 1.4); ctx.stroke();
     ctx.restore();
 }
 
@@ -2505,10 +2824,18 @@ function drawFeather(ctx, x, y, size, collected, t) {
     if (collected) return;
     ctx.save();
     ctx.translate(x, y + Math.sin(t) * 10);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(spriteLuz('#FFFFFF'), -size * 1.6, -size * 1.6, size * 3.2, size * 3.2);
+    ctx.restore();
     ctx.rotate(Math.sin(t * 0.5) * 0.2);
     ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = "#ffffff";
-    ctx.shadowBlur = 20;
+    ctx.strokeStyle = PALETA.nuvemContorno; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, size);
+    ctx.quadraticCurveTo(-size, size / 2, 0, -size);
+    ctx.quadraticCurveTo(size, size / 2, 0, size);
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(0, size);
     ctx.quadraticCurveTo(-size, size / 2, 0, -size);
@@ -2523,23 +2850,133 @@ function drawFeather(ctx, x, y, size, collected, t) {
     ctx.restore();
 }
 
-function updateHUD() {
-    scoreDisplay.innerText = Math.floor(score);
-    starsDisplay.innerText = starsCollected;
-    let spdMult = ((gameSpeed / (window.innerWidth > 800 ? 7 : 5))).toFixed(1);
-    speedDisplay.innerText = spdMult;
+// Só escreve no DOM quando o texto muda (evita trabalho de layout a cada frame)
+function setTexto(el, txt) {
+    if (el._txt !== txt) { el._txt = txt; el.textContent = txt; }
 }
 
-function update() {
-    if (state !== 'playing' || isPaused) return;
+function updateHUD() {
+    setTexto(scoreDisplay, String(Math.floor(score)));
+    setTexto(starsDisplay, String(Math.round(starsCollected)));
+    setTexto(speedDisplay, (gameSpeed / (window.innerWidth > 800 ? 7 : 5)).toFixed(1));
+}
 
-    if (sleepFrames > 0) {
-        sleepFrames--;
-        requestAnimationFrame(update);
-        return; // Hit-Pause effect
+// Remove do array (no mesmo lugar, sem criar array novo) os itens que já ficaram para trás
+function removerAntigos(arr, fimX) {
+    let j = 0;
+    for (let i = 0; i < arr.length; i++) {
+        if (fimX(arr[i]) > distance - 100) arr[j++] = arr[i];
     }
+    arr.length = j;
+}
 
-    // Process floating texts logic
+// ─────────────────────────────────────────────────────────────────────────
+// LOOP PRINCIPAL — passo fixo de física + render a cada quadro da tela
+// ─────────────────────────────────────────────────────────────────────────
+let rafId = null, ultimoTempo = 0, acumulador = 0;
+
+function iniciarLoop() {
+    if (rafId !== null) return; // nunca dois loops ao mesmo tempo
+    ultimoTempo = 0;
+    acumulador = 0;
+    rafId = requestAnimationFrame(loop);
+}
+
+function loop(agora) {
+    rafId = null;
+    if ((state !== 'playing' && state !== 'dying') || isPaused) return;
+    if (!ultimoTempo) ultimoTempo = agora;
+    acumulador += Math.min(agora - ultimoTempo, 100) / 1000;
+    ultimoTempo = agora;
+    let passos = 0;
+    while (acumulador >= PASSO_FISICA && passos < 6) {
+        step();
+        acumulador -= PASSO_FISICA;
+        passos++;
+        if (state !== 'playing' && state !== 'dying') return;
+    }
+    if (passos === 6) acumulador = 0;
+    renderInterpolado(acumulador / PASSO_FISICA);
+    updateHUD();
+    rafId = requestAnimationFrame(loop);
+}
+
+// ─── Interpolação entre passos de física ───
+// A física roda a 60 passos/s; em telas de 120/144 Hz desenhamos o estado "entre" dois passos
+// para a rolagem e o personagem andarem lisos em vez de aos trancos.
+const CAMPOS_INTERP = ['y', 'rot', 'spin', 'runPhase', 'mistura', 'scaleX', 'scaleY', 'w', 'h'];
+let distAnt = 0;
+
+function guardarEstadoAnterior() {
+    distAnt = distance;
+    if (!player) return;
+    player.ant = player.ant || {};
+    for (const k of CAMPOS_INTERP) player.ant[k] = player[k];
+    for (const p of platforms) p.yAnt = p.y;
+}
+
+function renderInterpolado(alfa) {
+    if (!player || !player.ant || state === 'dying' && passosMorte >= PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) { render(); return; }
+    alfa = Math.max(0, Math.min(1, alfa));
+    const lerp = (a, b) => a + (b - a) * alfa;
+    // troca temporariamente os valores reais pelos interpolados, desenha e restaura
+    const real = { distance };
+    for (const k of CAMPOS_INTERP) real[k] = player[k];
+    distance = lerp(distAnt, distance);
+    for (const k of CAMPOS_INTERP) if (player.ant[k] !== undefined) player[k] = lerp(player.ant[k], player[k]);
+    const platY = platforms.map(p => p.y);
+    for (const p of platforms) if (p.yAnt !== undefined) p.y = lerp(p.yAnt, p.y);
+    render();
+    platforms.forEach((p, i) => { p.y = platY[i]; });
+    for (const k of CAMPOS_INTERP) player[k] = real[k];
+    distance = real.distance;
+}
+
+const DICAS_TUTORIAL = [
+    { dist: 200, teclado: 'Espaço / ↑ / clique: pular (segure para ir mais alto)', toque: 'Toque na tela: pular (segure para ir mais alto)' },
+    { dist: 1800, teclado: 'Aperte de novo no ar: pulo duplo!', toque: 'Toque de novo no ar: pulo duplo!' },
+    { dist: 3600, teclado: '→ ou D: Dash (atravessa barreiras)', toque: 'DASH: avanço rápido (atravessa barreiras)' },
+    { dist: 5400, teclado: '↓ ou S no ar: Slam (quebra blocos)', toque: 'SLAM no ar: desce com tudo (quebra blocos)' },
+    { dist: 7200, teclado: 'P ou Esc: pausar', toque: '⏸ para pausar' }
+];
+
+// Multiplicador de pontos atual (bônus, sorte, personagem, upgrades, câmera lenta)
+function multiplicadorPontos() {
+    let smGain = isSlowMoActive ? (1 + ((unlockedUpgrades.slowmo_score || 0) * 0.5)) : 1;
+    let luckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
+    return (isBonusActive ? 2 : 1) * luckyM * (player.char.pointsMult || 1.0) * (1 + (unlockedUpgrades.score * 0.2)) * smGain;
+}
+
+// Atualiza um timer de power-up; devolve false quando acaba
+function passoTimer(ativo, tempo, display, timerEl, dt) {
+    if (!ativo) return [false, 0];
+    tempo -= dt;
+    setTexto(timerEl, Math.max(0, tempo).toFixed(1) + 's');
+    if (tempo <= 0) { display.classList.add('hidden'); return [false, 0]; }
+    return [true, tempo];
+}
+
+let escalaTempo = 1;          // 1 = normal; vai suavemente até ESCALA_SLOWMO na câmera lenta
+let tremorX = 0, tremorY = 0; // deslocamento do tremor, sorteado por passo (não por quadro desenhado)
+
+function sortearTremor() {
+    screenShake = screenShake > 0.5 ? screenShake * DECAIMENTO_TREMOR : 0;
+    tremorX = screenShake ? (Math.random() - 0.5) * screenShake : 0;
+    tremorY = screenShake ? (Math.random() - 0.5) * screenShake : 0;
+}
+
+function step() {
+    guardarEstadoAnterior();
+    if (state === 'dying') { passoMorte(); return; }
+    if (sleepFrames > 0) { sleepFrames--; return; } // hit-pause
+    frames++;
+
+    const dt = PASSO_FISICA;
+    // Câmera lenta desacelera a física inteira (o alcance do pulo não muda), com transição suave
+    escalaTempo += ((isSlowMoActive ? ESCALA_SLOWMO : 1) - escalaTempo) * SUAVIZACAO_SLOWMO;
+    const ts = escalaTempo;
+
+    // Textos flutuantes
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
         let ft = floatingTexts[i];
         ft.y -= 2.5;
@@ -2547,207 +2984,201 @@ function update() {
         if (ft.life <= 0) floatingTexts.splice(i, 1);
     }
 
-    const dt = 1 / 60;
-
-    // ── Powerup timers ──
-    if (isFlying) {
-        flightTimeLeft -= dt;
-        flightTimerDisplay.innerText = Math.max(0, flightTimeLeft).toFixed(1);
-        if (flightTimeLeft <= 0) { isFlying = false; flightTimeLeft = 0; powerupDisplay.classList.add('hidden'); }
-    }
-    if (isMagnetActive) {
-        magnetTimeLeft -= dt;
-        magnetTimerDisplay.innerText = Math.max(0, magnetTimeLeft).toFixed(1);
-        if (magnetTimeLeft <= 0) { isMagnetActive = false; magnetTimeLeft = 0; magnetDisplay.classList.add('hidden'); }
-    }
+    // ── Timers dos power-ups ──
+    [isFlying, flightTimeLeft] = passoTimer(isFlying, flightTimeLeft, powerupDisplay, flightTimerDisplay, dt);
+    [isMagnetActive, magnetTimeLeft] = passoTimer(isMagnetActive, magnetTimeLeft, magnetDisplay, magnetTimerDisplay, dt);
     if (isShieldActive) {
-        shieldTimerDisplay.innerText = "∞";
+        if (shieldTimeLeft > 9000) setTexto(shieldTimerDisplay, '∞'); // escudo inicial: dura até ser usado
+        else [isShieldActive, shieldTimeLeft] = passoTimer(true, shieldTimeLeft, shieldDisplay, shieldTimerDisplay, dt);
     }
-    if (isBonusActive) {
-        bonusTimeLeft -= dt;
-        bonusTimerDisplay.innerText = Math.max(0, bonusTimeLeft).toFixed(1);
-        if (bonusTimeLeft <= 0) { isBonusActive = false; bonusTimeLeft = 0; bonusDisplay.classList.add('hidden'); }
-    }
-    if (isSlowMoActive) {
-        slowMoTimeLeft -= dt;
-        slowmoTimerDisplay.innerText = Math.max(0, slowMoTimeLeft).toFixed(1);
-        if (slowMoTimeLeft <= 0) { isSlowMoActive = false; slowMoTimeLeft = 0; slowmoDisplay.classList.add('hidden'); }
-    }
-    if (isInfJumpActive) {
-        infJumpTimeLeft -= dt;
-        infjumpTimerDisplay.innerText = Math.max(0, infJumpTimeLeft).toFixed(1);
-        if (infJumpTimeLeft <= 0) { isInfJumpActive = false; infJumpTimeLeft = 0; infjumpDisplay.classList.add('hidden'); }
-    }
-    if (isShrinkActive) {
-        shrinkTimeLeft -= dt;
-        shrinkTimerDisplay.innerText = Math.max(0, shrinkTimeLeft).toFixed(1);
-        if (shrinkTimeLeft <= 0) { isShrinkActive = false; shrinkTimeLeft = 0; shrinkDisplay.classList.add('hidden'); }
-    }
-    if (isGiantActive) {
-        giantTimeLeft -= dt;
-        giantTimerDisplay.innerText = Math.max(0, giantTimeLeft).toFixed(1);
-        if (giantTimeLeft <= 0) { isGiantActive = false; giantTimeLeft = 0; giantDisplay.classList.add('hidden'); }
-    }
-    if (isMeteorActive) {
-        meteorTimeLeft -= dt;
-        meteorTimerDisplay.innerText = Math.max(0, meteorTimeLeft).toFixed(1);
-        if (meteorTimeLeft <= 0) { isMeteorActive = false; meteorTimeLeft = 0; meteorDisplay.classList.add('hidden'); }
-    }
-    if (isRocketActive) {
-        rocketTimeLeft -= dt;
-        rocketTimerDisplay.innerText = Math.max(0, rocketTimeLeft).toFixed(1);
-        if (rocketTimeLeft <= 0) { isRocketActive = false; rocketTimeLeft = 0; rocketDisplay.classList.add('hidden'); }
-    }
-    if (isBlackHoleActive) {
-        blackholeTimeLeft -= dt;
-        blackholeTimerDisplay.innerText = Math.max(0, blackholeTimeLeft).toFixed(1);
-        if (blackholeTimeLeft <= 0) { isBlackHoleActive = false; blackholeTimeLeft = 0; blackholeDisplay.classList.add('hidden'); }
-    }
-    if (isLuckyActive) {
-        luckyTimeLeft -= dt;
-        luckyTimerDisplay.innerText = Math.max(0, luckyTimeLeft).toFixed(1);
-        if (luckyTimeLeft <= 0) { isLuckyActive = false; luckyTimeLeft = 0; luckyDisplay.classList.add('hidden'); }
-    }
-    if (isHoverActive) {
-        hoverTimeLeft -= dt;
-        hoverTimerDisplay.innerText = Math.max(0, hoverTimeLeft).toFixed(1);
-        if (hoverTimeLeft <= 0) { isHoverActive = false; hoverTimeLeft = 0; hoverDisplay.classList.add('hidden'); }
-    }
-    if (isNoGapActive) {
-        noGapTimeLeft -= dt;
-        nogapTimerDisplay.innerText = Math.max(0, noGapTimeLeft).toFixed(1);
-        if (noGapTimeLeft <= 0) { isNoGapActive = false; noGapTimeLeft = 0; nogapDisplay.classList.add('hidden'); }
-    }
+    [isBonusActive, bonusTimeLeft] = passoTimer(isBonusActive, bonusTimeLeft, bonusDisplay, bonusTimerDisplay, dt);
+    [isSlowMoActive, slowMoTimeLeft] = passoTimer(isSlowMoActive, slowMoTimeLeft, slowmoDisplay, slowmoTimerDisplay, dt);
+    [isInfJumpActive, infJumpTimeLeft] = passoTimer(isInfJumpActive, infJumpTimeLeft, infjumpDisplay, infjumpTimerDisplay, dt);
+    [isShrinkActive, shrinkTimeLeft] = passoTimer(isShrinkActive, shrinkTimeLeft, shrinkDisplay, shrinkTimerDisplay, dt);
+    [isGiantActive, giantTimeLeft] = passoTimer(isGiantActive, giantTimeLeft, giantDisplay, giantTimerDisplay, dt);
+    [isMeteorActive, meteorTimeLeft] = passoTimer(isMeteorActive, meteorTimeLeft, meteorDisplay, meteorTimerDisplay, dt);
+    [isRocketActive, rocketTimeLeft] = passoTimer(isRocketActive, rocketTimeLeft, rocketDisplay, rocketTimerDisplay, dt);
+    [isBlackHoleActive, blackholeTimeLeft] = passoTimer(isBlackHoleActive, blackholeTimeLeft, blackholeDisplay, blackholeTimerDisplay, dt);
+    [isLuckyActive, luckyTimeLeft] = passoTimer(isLuckyActive, luckyTimeLeft, luckyDisplay, luckyTimerDisplay, dt);
+    [isHoverActive, hoverTimeLeft] = passoTimer(isHoverActive, hoverTimeLeft, hoverDisplay, hoverTimerDisplay, dt);
+    [isNoGapActive, noGapTimeLeft] = passoTimer(isNoGapActive, noGapTimeLeft, nogapDisplay, nogapTimerDisplay, dt);
 
+    // Tamanho (gigante / minúsculo)
     let targetW = 50, targetH = 40;
     if (isShrinkActive) { targetW = 25; targetH = 20; }
     else if (isGiantActive) { targetW = 100; targetH = 80; }
-    else if (player.char.id === 0) { targetW = 50; targetH = 40; } // Fallback to normal
     player.w += (targetW - player.w) * 0.1;
     player.h += (targetH - player.h) * 0.1;
 
-    // Squash & Stretch interpolation back to 1
+    // Squash & stretch voltando a 1
     player.scaleX += (1 - player.scaleX) * 0.15;
     player.scaleY += (1 - player.scaleY) * 0.15;
 
-    // Decay spin
+    // Mortal para trás: uma volta em DURACAO_GIRO segundos com ease-in-out; se pousar no meio, termina rápido
     if (player.spin < 0) {
-        player.spin += 0.2;
-        if (player.spin > 0) player.spin = 0;
+        player.giroT = (player.giroT || 0) + (player.giroRapido ? 0.12 : PASSO_FISICA / DURACAO_GIRO);
+        const t = Math.min(1, player.giroT);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        player.spin = -2 * Math.PI * (1 - e);
+        if (t >= 1) { player.spin = 0; player.giroRapido = false; }
     }
+    if (player.hurtFrames > 0) player.hurtFrames--;
+    if (player.sorriso > 0) player.sorriso--;
+    if (player.bufferPulo > 0) player.bufferPulo--;
+    sortearTremor();
+    if (phaseAnnounceFrames > 0) phaseAnnounceFrames--;
 
+    // ── Gravidade: queda mais pesada que a subida, com velocidade máxima ──
     let currentGravity = isFlying ? player.gravity * 0.4 : player.gravity;
-    // Meteor ability
+    if (player.vy > 0 && !isFlying && !isHoverActive) currentGravity *= MULT_GRAVIDADE_QUEDA;
     if (isMeteorActive && !player.onGround && player.vy > 0) currentGravity *= 2.5;
+    player.vy += currentGravity * ts;
+    const tetoQueda = isSlamming ? VEL_SLAM : VEL_MAX_QUEDA;
+    if (player.vy > tetoQueda) player.vy = tetoQueda;
 
-    player.vy += currentGravity;
-
-    // Hover ability
     if (isHoverActive && player.vy > 0) player.vy *= 0.8;
+    if (player.podeCortarPulo && player.vy >= 0) player.podeCortarPulo = false;
 
-    player.y += player.vy;
+    const yAntesDoPasso = player.y; // para a colisão usar o deslocamento REAL (o dash zera vy depois)
+    player.y += player.vy * ts;
 
     if (player.y < -50) { player.y = -50; player.vy = 0; }
 
-    // Rocket override
+    // Foguete
     if (isRocketActive) {
         player.y = -80;
         player.vy = 0;
         player.jumps = 0;
-        for (let i = 0; i < 3; i++) particles.push({ x: player.x, y: player.y + player.h / 2, vx: -Math.random() * 20, vy: (Math.random() - 0.5) * 10, life: 1, color: '#ff4400', size: 6 });
+        for (let i = 0; i < 3; i++) emitirParticula({ x: player.x, y: player.y + player.h / 2, vx: -Math.random() * 20, vy: (Math.random() - 0.5) * 10, life: 1, color: '#ff4400', size: 6 });
     }
 
-    let effectiveSpeed = isSlowMoActive ? gameSpeed * 0.45 : gameSpeed;
+    let effectiveSpeed = gameSpeed;
     if (isRocketActive) effectiveSpeed += gameSpeed * (2.0 + ((unlockedUpgrades.rocket_spd || 0) * 0.5));
 
-    // Dash Logic
+    // Dash
     if (dashCooldown > 0) dashCooldown -= dt;
     if (dashTimeLeft > 0) {
         dashTimeLeft -= dt;
         isDashing = true;
-        effectiveSpeed += 25 + ((unlockedUpgrades.dash_pwr || 0) * 10); // Massive speed boost
-        player.vy = 0; // Freeze vertical movement
-        player.scaleX = 1.6;
-        player.scaleY = 0.5;
-        particles.push({ x: player.x, y: player.y + player.h / 2 + (Math.random() * 20 - 10), vx: -10, vy: (Math.random() - 0.5) * 2, life: 1, color: '#00ffff', size: 6 });
+        // Entrada e saída suaves (curva seno); MULT_CURVA_DASH mantém a distância total do dash
+        const tDash = 1 - Math.max(0, dashTimeLeft) / DURACAO_DASH;
+        const curva = Math.sin(Math.PI * Math.min(tDash, 1));
+        effectiveSpeed += (BONUS_VEL_DASH + ((unlockedUpgrades.dash_pwr || 0) * 10)) * curva * MULT_CURVA_DASH;
+        player.vy = 0; // congela o movimento vertical
+        player.scaleX = 1 + 0.6 * curva;
+        player.scaleY = 1 - 0.5 * curva;
+        if (!usaPersonagemNovo(player)) emitirParticula({ x: player.x, y: player.y + player.h / 2 + (Math.random() * 20 - 10), vx: -10, vy: (Math.random() - 0.5) * 2, life: 1, color: '#00ffff', size: 6 });
     } else {
         isDashing = false;
     }
 
+    effectiveSpeed *= ts;
     distance += effectiveSpeed;
 
-    let smGain = isSlowMoActive ? (1 + ((unlockedUpgrades.slowmo_score || 0) * 0.5)) : 1;
-    let luckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
-    let mult = (isBonusActive ? 2 : 1) * luckyM * (player.char.pointsMult || 1.0) * (1 + (unlockedUpgrades.score * 0.2)) * smGain;
-    if (isGiantActive) mult *= 3;
-    let scoreGain = effectiveSpeed * 0.05 * mult;
+    let scoreGain = effectiveSpeed * 0.05 * multiplicadorPontos() * (isGiantActive ? 3 : 1);
     score += scoreGain;
-
     checkMission('score', scoreGain);
-    // Phase check — advance when score threshold reached
+
+    // ── Fase: avança por distância, no máximo uma por vez ──
     let nextPhase = currentPhase + 1;
-    if (nextPhase < PHASES.length && score >= PHASES[nextPhase].scoreThreshold) {
+    if (nextPhase < PHASES.length && distance >= PHASES[nextPhase].distThreshold) {
         currentPhase = nextPhase;
         omniSpawnedThisPhase = false;
-        gameSpeed = PHASES[currentPhase].baseSpeed + (score / 10000) * 0.5;
         applyPhaseParams();
         phaseAnnounceFrames = 180;
-    } else {
-        gameSpeed += 0.0015 * (1 - ((unlockedUpgrades.phase_chill || 0) * 0.25));
+        checkMission('fases', 1);
     }
 
-    player.onGround = false;
+    // ── Velocidade: sobe devagar até o teto e nunca cai na troca de fase ──
+    const chill = 1 - ((unlockedUpgrades.phase_chill || 0) * 0.25);
+    gameSpeedAlvo = Math.min(VEL_MAXIMA, Math.max(PHASES[currentPhase].baseSpeed, gameSpeedAlvo + ACELERACAO_JOGO * chill));
+    gameSpeed += (gameSpeedAlvo - gameSpeed) * SUAVIZACAO_VEL;
 
-    platforms = platforms.filter(p => p.x + p.w > distance - 100);
-    stars = stars.filter(s => s.x > distance - 100);
-    feathers = feathers.filter(f => f.x > distance - 100);
-    powerupItems = powerupItems.filter(p => p.x > distance - 100);
+    // ── Tutorial ──
+    if (mostrarTutorial && tutorialIdx < DICAS_TUTORIAL.length && distance >= DICAS_TUTORIAL[tutorialIdx].dist) {
+        const d = DICAS_TUTORIAL[tutorialIdx++];
+        showToast(isTouchDevice() ? d.toque : d.teclado);
+    }
+
+    // ── Plataformas móveis e quebradiças ──
+    for (const p of platforms) {
+        const yAnt = p.y;
+        // a fase acumula com a escala de tempo: ligar/desligar a câmera lenta não "teleporta" a plataforma
+        if (p.amp) { p.faseOsc += p.velOsc * ts; p.y = p.baseY + Math.sin(p.faseOsc) * p.amp; }
+        if (p.caindo) { p.vyQueda += 0.5 * ts; p.y += p.vyQueda * ts; }
+        p.dy = p.y - yAnt;
+    }
+
+    removerAntigos(platforms, p => p.x + p.w);
+    removerAntigos(stars, s => s.x);
+    removerAntigos(feathers, f => f.x);
+    removerAntigos(powerupItems, p => p.x);
+    removerAntigos(obstaculos, o => o.x + o.w);
     generateWorld();
 
-    // Platform Collision 
+    // ── Colisão com plataformas ──
+    const wasGrounded = player.onGround;
+    player.onGround = false;
+    let pRealX = distance + player.x;
+    let hitMargin = player.w * 0.2; // ~10px de folga em cada lado no tamanho normal
+    let pRealRight = pRealX + player.w - hitMargin;
+    let pRealLeft = pRealX + hitMargin;
+    const dyPasso = player.y - yAntesDoPasso; // deslocamento real neste passo
+
     for (let p of platforms) {
-        let pRealX = distance + player.x;
-        let hitMargin = player.w * 0.2; // roughly equivalent to 10-15px for normal width
-        let pRealRight = pRealX + player.w - hitMargin;
-        let pRealLeft = pRealX + hitMargin;
-        let platLeft = p.x;
-        let platRight = p.x + p.w;
-
-        if (pRealRight > platLeft && pRealLeft < platRight) {
-            if (player.y + player.h > p.y && player.y + player.h - player.vy <= p.y + 10) {
-                // Hard Landing Squash
-                if (player.vy > 8 || isSlamming) {
-                    player.scaleX = 1.6;
-                    player.scaleY = 0.4;
-                    for (let i = 0; i < (isSlamming ? 20 : 8); i++) particles.push({ x: player.x + player.w / 2, y: p.y, vx: (Math.random() - 0.5) * 15, vy: -Math.random() * (isSlamming ? 8 : 4), life: 1, color: "rgba(200,200,200,0.8)", size: Math.random() * 6 + 2 });
-                    if (isSlamming) {
-                        screenShake = 20; // Brutal impact screenshake
-                        playSound('hit');
-                        let slamBonus = (unlockedUpgrades.slam_score || 0) * 50;
-                        if (slamBonus > 0) score += slamBonus;
-                    }
-                    isSlamming = false;
-                } else if (!player.onGround) {
-                    // Light landing squash
-                    player.scaleX = 1.3;
-                    player.scaleY = 0.7;
+        if (p.caindo) continue;
+        if (pRealRight > p.x && pRealLeft < p.x + p.w) {
+            const pes = player.y + player.h;
+            const pousou = pes > p.y && pes - dyPasso <= p.y + 10;
+            // já estava em cima de uma plataforma que desceu: continua "colado" nela
+            const colado = wasGrounded && player.vy >= 0 && (p.dy || 0) > 0 && pes >= p.y - p.dy - 2 && pes <= p.y + 12;
+            if (pousou || colado) {
+                aoPousar(p.y, wasGrounded);
+                if (p.quebradica) {
+                    // nuvem de chuva pingando enquanto alguém está em cima
+                    if (frames % 5 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + ESPESSURA_NUVEM - 6, vx: 0, vy: 2, gravidade: 0.25, life: 0.8, size: 2, color: PALETA.gota });
+                    p.tempoPisado += ts; // conta em tempo de jogo (igual na câmera lenta)
+                    if (p.tempoPisado > 35) { p.caindo = true; p.vyQueda = 0; }
                 }
-
-                if (isMeteorActive && player.vy > 10) {
-                    // Huge boom score
-                    score += 500 * (player.char.pointsMult || 1.0) * (1 + ((unlockedUpgrades.meteor_pts || 0) * 0.5));
-                    for (let i = 0; i < 25; i++) particles.push({ x: player.x + player.w / 2, y: p.y, vx: (Math.random() - 0.5) * 25, vy: -Math.random() * 15, life: 1.5, color: "#ff2200", size: Math.random() * 15 + 5 });
-                }
-
-                player.onGround = true;
-                player.vy = 0;
-                player.y = p.y - player.h;
-                player.jumps = 0;
             }
         }
     }
 
-    let pRealX = distance + player.x;
+    // ── Obstáculos ──
+    for (const ob of obstaculos) {
+        if (ob.destruido) continue;
+        if (ob.plat.caindo) { ob.destruido = true; continue; }
+        const topo = ob.plat.y - ob.h;
+        if (!(pRealRight > ob.x && pRealLeft < ob.x + ob.w && player.y + player.h > topo && player.y + 4 < ob.plat.y)) continue;
+
+        if (ob.tipo === 'bloco' && player.vy >= 0 && player.y + player.h - dyPasso <= topo + 10) {
+            // Pousou em cima do bloco: slam quebra, senão funciona como chão
+            if (isSlamming && player.vy >= VEL_MIN_SLAM) { destruirObstaculo(ob); aoPousar(ob.plat.y, false); }
+            else aoPousar(topo, wasGrounded);
+            continue;
+        }
+        if ((isDashing && ob.tipo !== 'espinho') || isGiantActive || isRocketActive) { destruirObstaculo(ob); continue; }
+        if (player.hurtFrames > 0) continue;
+        if (isShieldActive) {
+            isShieldActive = false; shieldTimeLeft = 0; shieldDisplay.classList.add('hidden');
+            destruirObstaculo(ob);
+            player.hurtFrames = PASSOS_INVULNERAVEL;
+            showToast('🛡️ Escudo bloqueou o obstáculo!');
+            continue;
+        }
+        morrer();
+        return;
+    }
+
+    // Coyote time: saiu da borda sem pular → ainda pode pular "do chão" por alguns passos
+    if (!player.onGround && player.coyote > 0) {
+        player.coyote--;
+        if (player.coyote === 0 && player.jumps === 0) player.jumps = 1;
+    }
+    // Jump buffer: pulo apertado pouco antes de pousar
+    if (player.onGround && !wasGrounded && player.bufferPulo > 0) jump();
+
+    pRealX = distance + player.x;
     let pCX = pRealX + player.w / 2;
     let pCY = player.y + player.h / 2;
     const MAGNET_RADIUS = isBlackHoleActive ? 900 : (isMagnetActive ? 180 : ((player.char.magnetic || 0) + (unlockedUpgrades.magnet * 30)));
@@ -2757,8 +3188,8 @@ function update() {
         let dx = pCX - s.x;
         let dy = pCY - s.y;
         let dist = Math.hypot(dx, dy);
-        // Magnet attraction
-        if (MAGNET_RADIUS > 0 && dist < MAGNET_RADIUS) {
+        // Ímã
+        if (MAGNET_RADIUS > 0 && dist < MAGNET_RADIUS && dist > 0) {
             let pull = (MAGNET_RADIUS - dist) / MAGNET_RADIUS * (5 + ((unlockedUpgrades.magnet_spd || 0) * 2.5));
             s.x += (dx / dist) * pull;
             s.y += (dy / dist) * pull;
@@ -2766,22 +3197,19 @@ function update() {
         if (dist < player.w / 2 + s.size) {
             s.collected = true;
             let st = s.starType || STAR_TYPES[0];
-            let starVal = (st.value || 10) * (1 + ((unlockedUpgrades.coin_val || 0) * 0.25));
+            let starVal = Math.round((st.value || 10) * (1 + ((unlockedUpgrades.coin_val || 0) * 0.25)));
             starsCollected += starVal;
             playSound('collect');
             checkMission('stars', starVal);
+            player.sorriso = 40;
 
-            let smGain = isSlowMoActive ? (1 + ((unlockedUpgrades.slowmo_score || 0) * 0.5)) : 1;
-            let luckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
-            score += (isBonusActive ? starVal * 2 : starVal) * luckyM * (player.char.pointsMult || 1.0) * (1 + (unlockedUpgrades.score * 0.2)) * smGain;
+            score += starVal * multiplicadorPontos();
             let burstColor = st.glow || '#ffdd00';
-            for (let i = 0; i < 10; i++) particles.push({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 4 });
+            for (let i = 0; i < 8; i++) emitirParticula({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 5, forma: 'brilho' });
 
-            // Pop-up +Score Text Feedback
             floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal}`, life: 1.0, color: burstColor });
-            sleepFrames = 2; // Micro hit-pause 
+            sleepFrames = 2; // micro hit-pause
 
-            // Toast para estrelas raras+
             if (starVal >= 500) showToast(`${st.name}: +${starVal.toLocaleString()} ⭐`);
         }
     }
@@ -2794,128 +3222,29 @@ function update() {
             isFlying = true; flightTimeLeft = 10.0 * (player.char.powerupDurMult || 1.0);
             powerupDisplay.classList.remove('hidden');
             player.jumps = 0;
+            player.sorriso = 60;
             score += (isBonusActive ? 200 : 100) * (player.char.pointsMult || 1.0);
-            for (let i = 0; i < 30; i++) particles.push({ x: f.x - distance, y: f.y, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, life: 1, color: '#ffffff', size: 5 });
+            for (let i = 0; i < 16; i++) emitirParticula({ x: f.x - distance, y: f.y, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, life: 1, color: PALETA.particulas[i % 5], size: 6, forma: 'brilho' });
         }
     }
 
-    // ── New Powerup Items collection ──
+    // ── Coleta de power-ups ──
     for (let pu of powerupItems) {
         if (pu.collected) continue;
         let dx = pCX - pu.x; let dy = pCY - pu.y;
         if (Math.hypot(dx, dy) < player.w / 2 + pu.size) {
             pu.collected = true;
-            let burstCol = '#ffffff';
-            let pDur = (player.char.powerupDurMult || 1.0) * (1 + ((unlockedUpgrades.pu_time || 0) * 0.1));
-            switch (pu.type) {
-                case 'magnet':
-                    isMagnetActive = true; magnetTimeLeft = 8 * pDur;
-                    magnetDisplay.classList.remove('hidden');
-                    burstCol = '#ff66aa'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'shield':
-                    isShieldActive = true; shieldTimeLeft = 9999;
-                    shieldDisplay.classList.remove('hidden');
-                    burstCol = '#44ccff'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'bonus':
-                    isBonusActive = true; bonusTimeLeft = 8 * pDur;
-                    bonusDisplay.classList.remove('hidden');
-                    burstCol = '#ffff00'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'slowmo':
-                    isSlowMoActive = true; slowMoTimeLeft = 5 * pDur;
-                    slowmoDisplay.classList.remove('hidden');
-                    burstCol = '#88ffff'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'infjump':
-                    isInfJumpActive = true; infJumpTimeLeft = 10 * pDur;
-                    infjumpDisplay.classList.remove('hidden');
-                    burstCol = '#ffaa00'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'starchest':
-                    starsCollected += 5;
-                    let chestLuckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
-                    score += (isBonusActive ? 1000 : 500) * chestLuckyM * (player.char.pointsMult || 1.0);
-                    burstCol = '#ffd700';
-                    for (let i = 0; i < 5; i++) stars.push({ x: pu.x + (Math.random() - 0.5) * 60, y: pu.y - Math.random() * 40, size: 15, collected: false, oscOffset: Math.random() * Math.PI * 2 });
-                    break;
-                case 'shrink':
-                    isShrinkActive = true; shrinkTimeLeft = 8 * pDur; shrinkDisplay.classList.remove('hidden');
-                    burstCol = '#ff0055'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'giant':
-                    isGiantActive = true; giantTimeLeft = 8 * pDur; giantDisplay.classList.remove('hidden');
-                    burstCol = '#44ff00'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'meteor':
-                    isMeteorActive = true; meteorTimeLeft = 8 * pDur; meteorDisplay.classList.remove('hidden');
-                    burstCol = '#ff2200'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'rocket':
-                    isRocketActive = true; rocketTimeLeft = 5 * pDur; rocketDisplay.classList.remove('hidden');
-                    burstCol = '#ffffff'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'blackhole':
-                    isBlackHoleActive = true; blackholeTimeLeft = 6 * pDur; blackholeDisplay.classList.remove('hidden');
-                    burstCol = '#8800ff'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'lucky':
-                    isLuckyActive = true; luckyTimeLeft = 8 * pDur; luckyDisplay.classList.remove('hidden');
-                    burstCol = '#00ffaa'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'hover':
-                    isHoverActive = true; hoverTimeLeft = 8 * pDur; hoverDisplay.classList.remove('hidden');
-                    burstCol = '#00ccff'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'nogap':
-                    isNoGapActive = true; noGapTimeLeft = 15 * pDur; nogapDisplay.classList.remove('hidden');
-                    burstCol = '#00ff00'; score += 80 * (player.char.pointsMult || 1.0);
-                    break;
-                case 'coinshower':
-                    score += 500 * (player.char.pointsMult || 1.0);
-                    burstCol = '#ffee00';
-                    // Spawn stars ahead of the player in world space so the player runs through them
-                    for (let i = 0; i < 40; i++) {
-                        let st = pickStarType();
-                        stars.push({
-                            x: distance + player.x + player.w / 2 + Math.random() * 800 + 50,
-                            y: player.y - 40 - Math.random() * (ch * 0.4),
-                            size: st.size,
-                            starType: st,
-                            collected: false,
-                            oscOffset: Math.random() * Math.PI * 2
-                        });
-                    }
-                    break;
-                case 'rainbow':
-                    score += 500 * (player.char.pointsMult || 1.0);
-                    burstCol = '#ff00ff';
-                    rainbowPlatformsCount = 10; // next 10 platforms are zero gap (will implement in world gen shortly)
-                    break;
-                case 'jackpot':
-                    score += 5000 * (player.char.pointsMult || 1.0);
-                    burstCol = '#ffaa00';
-                    break;
-                case 'omni':
-                    isMagnetActive = true; magnetTimeLeft = 10 * pDur; magnetDisplay.classList.remove('hidden');
-                    isShieldActive = true; shieldTimeLeft = 9999; shieldDisplay.classList.remove('hidden');
-                    isBonusActive = true; bonusTimeLeft = 10 * pDur; bonusDisplay.classList.remove('hidden');
-                    isInfJumpActive = true; infJumpTimeLeft = 10 * pDur; infjumpDisplay.classList.remove('hidden');
-                    isFlying = true; flightTimeLeft = 10 * pDur; powerupDisplay.classList.remove('hidden');
-                    player.jumps = 0;
-                    score += 1000 * (player.char.pointsMult || 1.0);
-                    burstCol = '#ffffff';
-                    for (let i = 0; i < 30; i++) particles.push({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20, life: 1.5, color: ['#ff00ff', '#00ffff', '#ffff00'][Math.floor(Math.random() * 3)], size: Math.random() * 8 + 4 });
-                    break;
-            }
-            for (let i = 0; i < 25; i++) particles.push({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12, life: 1.2, color: burstCol, size: Math.random() * 6 + 3 });
+            coletarPowerup(pu);
         }
     }
 
-    if (frames % 3 === 0 && player.onGround) createPlayerParticle();
+    atualizarPose(player, effectiveSpeed);
+    const personagemNovo = usaPersonagemNovo(player);
+    if (personagemNovo) atualizarEfeitosPersonagem(player, effectiveSpeed, distance); // fita e estrelinhas
+
+    if (frames % 3 === 0 && player.onGround && !personagemNovo) createPlayerParticle();
     if (isFlying && frames % 2 === 0) {
-        particles.push({
+        emitirParticula({
             x: player.x + 10,
             y: player.y + player.h / 2 + (Math.random() * 10 - 5),
             vx: -Math.random() * 4 - 2,
@@ -2925,317 +3254,1002 @@ function update() {
             size: Math.random() * 8 + 4
         });
     }
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-        let pt = particles[i];
-        pt.x += pt.vx;
-        pt.y += pt.vy;
-        pt.life -= 0.03;
-        if (pt.life <= 0) particles.splice(i, 1);
-    }
-
-    if (player.y > ch) {
-        if (isShieldActive) {
-            // Shield absorbs the fall — place player back on nearest platform
-            isShieldActive = false; shieldTimeLeft = 0;
-            shieldDisplay.classList.add('hidden');
-            let nearest = platforms.reduce((best, p) => {
-                let sx = p.x - distance;
-                return (Math.abs(sx + p.w / 2 - player.x) < Math.abs(best.x + best.w / 2 - distance - player.x)) ? p : best;
-            }, platforms[0]);
-            player.y = nearest.y - player.h;
-            player.vy = -8;
-            player.jumps = 0;
-            for (let i = 0; i < 20; i++) particles.push({ x: player.x + player.w / 2, y: player.y + player.h, vx: (Math.random() - 0.5) * 14, vy: -Math.random() * 6, life: 1.2, color: '#44ccff', size: 5 });
-            showToast('🛡️ Escudo absorveu a queda!');
-        } else if (unlockedUpgrades.free_revive > 0 && !usedFreeRevive) {
-            // Segunda Chance — revive in place, launches player upward with a golden flash
-            usedFreeRevive = true;
-            let nearest = platforms.reduce((best, p) => {
-                let sx = p.x - distance;
-                return (Math.abs(sx + p.w / 2 - player.x) < Math.abs(best.x + best.w / 2 - distance - player.x)) ? p : best;
-            }, platforms[0]);
-            player.y = nearest.y - player.h;
-            player.vy = -14;
-            player.jumps = 0;
-            for (let i = 0; i < 35; i++) particles.push({ x: player.x + player.w / 2, y: player.y + player.h, vx: (Math.random() - 0.5) * 18, vy: -Math.random() * 10, life: 1.5, color: i % 2 === 0 ? '#ffd700' : '#ffffff', size: Math.random() * 8 + 3 });
-            showToast('✨ Segunda Chance ativada!');
-        } else {
-            playSound('hit');
-            state = 'gameover';
-            gameOverMenu.classList.remove('hidden');
-            hud.classList.add('hidden');
-            mobileControls.style.display = 'none';
-            finalScore.innerText = Math.floor(score);
-            finalStars.innerText = starsCollected;
-            document.getElementById('final-phase').innerText = currentPhase + 1;
-            document.getElementById('final-char').innerText = player.char.name;
-
-            // Add stars to global wallet
-            globalStars += starsCollected;
-            localStorage.setItem('uniparkourGlobalStars', globalStars);
-            updateGlobalStarsDisplay();
-
-            checkHighScore(Math.floor(score));
+    // Partículas da aura (antes eram criadas dentro do render)
+    if (selectedSkin !== 'default' && frames % 4 === 0) {
+        const auraConfig = skins.find(s => s.id === selectedSkin);
+        if (auraConfig && auraConfig.colors) {
+            emitirParticula({
+                x: player.x + player.w / 2, y: player.y + player.h / 2,
+                vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4,
+                life: 1, color: Math.random() > 0.5 ? auraConfig.colors[0] : auraConfig.colors[1], size: 4
+            });
         }
     }
 
-    updateHUD();
-    render();
-    frames++;
+    atualizarParticulas();
 
-    if (state === 'playing') requestAnimationFrame(update);
+    if (player.y > ch) caiuNoBuraco();
+}
+
+// ─── Partículas: pool fixo de MAX_PARTICULAS objetos reaproveitados ───
+// formas: 'circulo' (padrão), 'brilho' (estrela de 4 pontas, modo lighter), 'poeira' (nuvenzinha que cresce)
+const poolParticulas = Array.from({ length: MAX_PARTICULAS }, () => ({ ativa: false }));
+let cursorParticula = 0;
+
+function emitirParticula(o) {
+    // procura um espaço livre a partir do cursor; se o pool estiver cheio, reaproveita o mais antigo
+    let s = null;
+    for (let i = 0; i < MAX_PARTICULAS; i++) {
+        const k = (cursorParticula + i) % MAX_PARTICULAS;
+        if (!poolParticulas[k].ativa) { s = poolParticulas[k]; cursorParticula = k + 1; break; }
+    }
+    if (!s) { s = poolParticulas[cursorParticula % MAX_PARTICULAS]; cursorParticula++; }
+    s.ativa = true;
+    s.x = o.x; s.y = o.y; s.vx = o.vx || 0; s.vy = o.vy || 0;
+    s.life = o.life || 1; s.vida0 = s.life;
+    s.color = o.color || '#ffffff'; s.size = o.size || 3;
+    s.forma = o.forma || 'circulo'; s.gravidade = o.gravidade || 0;
+    s.rot = Math.random() * Math.PI; s.vr = (Math.random() - 0.5) * 0.3;
+}
+
+function limparParticulas() {
+    for (const p of poolParticulas) p.ativa = false;
+}
+
+function atualizarParticulas() {
+    for (const pt of poolParticulas) {
+        if (!pt.ativa) continue;
+        pt.x += pt.vx;
+        pt.y += pt.vy;
+        pt.vy += pt.gravidade;
+        if (pt.forma === 'poeira') { pt.vx *= 0.92; pt.vy *= 0.92; }
+        pt.rot += pt.vr;
+        pt.life -= 0.03;
+        if (pt.life <= 0) pt.ativa = false;
+    }
+}
+
+function spritePoeira() {
+    return spriteCache('poeira', 64, (g, t) => {
+        const m = t / 2;
+        const grad = g.createRadialGradient(m, m, 0, m, m, m);
+        grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+        grad.addColorStop(0.6, 'rgba(255,255,255,0.5)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grad; g.fillRect(0, 0, t, t);
+    });
+}
+
+function desenharParticulas(ctx) {
+    ctx.save();
+    // 1) círculos e poeira (normal)
+    for (const pt of poolParticulas) {
+        if (!pt.ativa || pt.forma === 'brilho') continue;
+        const k = Math.max(0, pt.life / pt.vida0);
+        if (pt.forma === 'poeira') {
+            const t = pt.size * (1 + (1 - k) * 1.6);
+            ctx.globalAlpha = k * 0.7;
+            ctx.drawImage(spritePoeira(), pt.x - t, pt.y - t, t * 2, t * 2);
+        } else {
+            ctx.globalAlpha = Math.min(1, pt.life);
+            ctx.fillStyle = pt.color;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    // 2) brilhos (modo lighter)
+    ctx.globalCompositeOperation = 'lighter';
+    for (const pt of poolParticulas) {
+        if (!pt.ativa || pt.forma !== 'brilho') continue;
+        const k = Math.max(0, pt.life / pt.vida0);
+        const t = pt.size * 2.4 * (0.4 + 0.6 * k);
+        ctx.globalAlpha = Math.min(1, k * 1.4);
+        ctx.save();
+        ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
+        ctx.drawImage(spriteEstrelinha(pt.color), -t / 2, -t / 2, t, t);
+        ctx.restore();
+    }
+    ctx.restore();
+}
+
+// Pouso em uma superfície (plataforma ou topo de bloco)
+function aoPousar(topoY, estavaNoChao) {
+    const vyImpacto = player.vy;
+    const slamValido = isSlamming && vyImpacto >= VEL_MIN_SLAM;
+    if (!estavaNoChao) {
+        // Pose de recuperação do pouso + passada recomeça com os cascos da frente tocando o chão
+        player.pouso = { t: 0, forca: vyImpacto };
+        player.runPhase = (Math.floor(player.runPhase * FATOR_FASE_GALOPE) + 1 + 0.3) / FATOR_FASE_GALOPE;
+        if (player.spin < 0) player.giroRapido = true;
+        if (vyImpacto > 8 || slamValido) {
+            player.scaleX = 1.6;
+            player.scaleY = 0.4;
+            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira' });
+        } else {
+            // Pouso leve: squash suave + um pouco de poeira
+            player.scaleX = 1.3;
+            player.scaleY = 0.7;
+            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira' });
+        }
+        if (slamValido) {
+            screenShake = 20; // impacto brutal
+            playSound('hit');
+            let slamBonus = (unlockedUpgrades.slam_score || 0) * 50;
+            if (slamBonus > 0) score += slamBonus;
+            checkMission('slams', 1);
+        } else if (vyImpacto > VEL_TREMOR_POUSO) {
+            screenShake = Math.max(screenShake, TREMOR_POUSO_FORTE);
+        }
+        if (isMeteorActive && vyImpacto > 10) {
+            score += 500 * (player.char.pointsMult || 1.0) * (1 + ((unlockedUpgrades.meteor_pts || 0) * 0.5));
+            for (let i = 0; i < 25; i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * 25, vy: -Math.random() * 15, life: 1.5, color: "#ff2200", size: Math.random() * 15 + 5 });
+        }
+    }
+    isSlamming = false;
+    player.onGround = true;
+    player.vy = 0;
+    player.y = topoY - player.h;
+    player.jumps = 0;
+    player.coyote = PASSOS_COYOTE;
+}
+
+function destruirObstaculo(ob) {
+    ob.destruido = true;
+    const cx = ob.x - distance + ob.w / 2, cy = ob.plat.y - ob.h / 2;
+    const cor = ob.tipo === 'bloco' ? '#c08040' : (ob.tipo === 'barreira' ? '#00ffff' : '#ffffff');
+    for (let i = 0; i < 14; i++) emitirParticula({ x: cx, y: cy, vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14, life: 1, color: cor, size: Math.random() * 4 + 4, forma: 'brilho', gravidade: 0.15 });
+    const pts = Math.round(150 * multiplicadorPontos());
+    score += pts;
+    floatingTexts.push({ x: cx, y: cy - 20, text: `+${pts}`, life: 1.0, color: cor });
+    screenShake = Math.max(screenShake, 6);
+    sleepFrames = 3;
+    playSound('hit');
+    checkMission('obstaculos', 1);
+}
+
+function coletarPowerup(pu) {
+    let burstCol = '#ffffff';
+    let pDur = (player.char.powerupDurMult || 1.0) * (1 + ((unlockedUpgrades.pu_time || 0) * 0.1));
+    const pm = player.char.pointsMult || 1.0;
+    player.sorriso = 60;
+    checkMission('powerups', 1);
+    switch (pu.type) {
+        case 'magnet':
+            isMagnetActive = true; magnetTimeLeft = 8 * pDur;
+            magnetDisplay.classList.remove('hidden');
+            burstCol = '#ff66aa'; score += 80 * pm;
+            break;
+        case 'shield':
+            isShieldActive = true;
+            if (shieldTimeLeft < 9000) shieldTimeLeft = DURACAO_ESCUDO * pDur; // não encurta o escudo inicial infinito
+            shieldDisplay.classList.remove('hidden');
+            burstCol = '#44ccff'; score += 80 * pm;
+            break;
+        case 'bonus':
+            isBonusActive = true; bonusTimeLeft = 8 * pDur;
+            bonusDisplay.classList.remove('hidden');
+            burstCol = '#ffff00'; score += 80 * pm;
+            break;
+        case 'slowmo':
+            isSlowMoActive = true; slowMoTimeLeft = 5 * pDur;
+            slowmoDisplay.classList.remove('hidden');
+            burstCol = '#88ffff'; score += 80 * pm;
+            break;
+        case 'infjump':
+            isInfJumpActive = true; infJumpTimeLeft = 10 * pDur;
+            infjumpDisplay.classList.remove('hidden');
+            burstCol = '#ffaa00'; score += 80 * pm;
+            break;
+        case 'starchest': {
+            // Baú: 5 estrelas de tipos sorteados de verdade + bônus de pontos
+            let chestLuckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
+            score += (isBonusActive ? 1000 : 500) * chestLuckyM * pm;
+            burstCol = '#ffd700';
+            for (let i = 0; i < 5; i++) {
+                const st = pickStarType();
+                stars.push({ x: pu.x + (Math.random() - 0.5) * 60, y: pu.y - Math.random() * 40, size: st.size, starType: st, collected: false, oscOffset: Math.random() * Math.PI * 2 });
+            }
+            break;
+        }
+        case 'shrink':
+            isShrinkActive = true; shrinkTimeLeft = 8 * pDur; shrinkDisplay.classList.remove('hidden');
+            burstCol = '#ff0055'; score += 80 * pm;
+            break;
+        case 'giant':
+            isGiantActive = true; giantTimeLeft = 8 * pDur; giantDisplay.classList.remove('hidden');
+            burstCol = '#44ff00'; score += 80 * pm;
+            break;
+        case 'meteor':
+            isMeteorActive = true; meteorTimeLeft = 8 * pDur; meteorDisplay.classList.remove('hidden');
+            burstCol = '#ff2200'; score += 80 * pm;
+            break;
+        case 'rocket':
+            isRocketActive = true; rocketTimeLeft = 5 * pDur; rocketDisplay.classList.remove('hidden');
+            burstCol = '#ffffff'; score += 80 * pm;
+            break;
+        case 'blackhole':
+            isBlackHoleActive = true; blackholeTimeLeft = 6 * pDur; blackholeDisplay.classList.remove('hidden');
+            burstCol = '#8800ff'; score += 80 * pm;
+            break;
+        case 'lucky':
+            isLuckyActive = true; luckyTimeLeft = 8 * pDur; luckyDisplay.classList.remove('hidden');
+            burstCol = '#00ffaa'; score += 80 * pm;
+            break;
+        case 'hover':
+            isHoverActive = true; hoverTimeLeft = 8 * pDur; hoverDisplay.classList.remove('hidden');
+            burstCol = '#00ccff'; score += 80 * pm;
+            break;
+        case 'nogap':
+            isNoGapActive = true; noGapTimeLeft = 15 * pDur; nogapDisplay.classList.remove('hidden');
+            burstCol = '#00ff00'; score += 80 * pm;
+            break;
+        case 'coinshower':
+            score += 500 * pm;
+            burstCol = '#ffee00';
+            // Estrelas à frente do jogador (no mundo) para ele passar por elas
+            for (let i = 0; i < 20; i++) {
+                let st = pickStarType();
+                stars.push({
+                    x: distance + player.x + player.w / 2 + Math.random() * 800 + 50,
+                    y: player.y - 40 - Math.random() * (ch * 0.4),
+                    size: st.size,
+                    starType: st,
+                    collected: false,
+                    oscOffset: Math.random() * Math.PI * 2
+                });
+            }
+            break;
+        case 'rainbow':
+            score += 500 * pm;
+            burstCol = '#ff00ff';
+            rainbowPlatformsCount = 10; // as próximas 10 plataformas não têm vão
+            break;
+        case 'jackpot':
+            score += 5000 * pm;
+            burstCol = '#ffaa00';
+            break;
+        case 'omni':
+            isMagnetActive = true; magnetTimeLeft = 10 * pDur; magnetDisplay.classList.remove('hidden');
+            isShieldActive = true; if (shieldTimeLeft < 9000) shieldTimeLeft = DURACAO_ESCUDO * pDur; shieldDisplay.classList.remove('hidden');
+            isBonusActive = true; bonusTimeLeft = 10 * pDur; bonusDisplay.classList.remove('hidden');
+            isInfJumpActive = true; infJumpTimeLeft = 10 * pDur; infjumpDisplay.classList.remove('hidden');
+            isFlying = true; flightTimeLeft = 10 * pDur; powerupDisplay.classList.remove('hidden');
+            player.jumps = 0;
+            score += 1000 * pm;
+            burstCol = '#ffffff';
+            for (let i = 0; i < 18; i++) emitirParticula({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20, life: 1.5, color: PALETA.particulas[i % 5], size: Math.random() * 5 + 5, forma: 'brilho' });
+            break;
+    }
+    for (let i = 0; i < 12; i++) emitirParticula({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12, life: 1.2, color: burstCol, size: Math.random() * 4 + 4, forma: 'brilho' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// QUEDA, RESGATE E MORTE
+// ─────────────────────────────────────────────────────────────────────────
+function caiuNoBuraco() {
+    if (isShieldActive) {
+        isShieldActive = false; shieldTimeLeft = 0;
+        shieldDisplay.classList.add('hidden');
+        resgatarJogador(-8, '#44ccff');
+        showToast('🛡️ Escudo absorveu a queda!');
+    } else if (unlockedUpgrades.free_revive > 0 && !usedFreeRevive) {
+        usedFreeRevive = true;
+        resgatarJogador(-14, '#ffd700');
+        showToast('✨ Segunda Chance ativada!');
+    } else {
+        morrer();
+    }
+}
+
+// Coloca o jogador numa plataforma À FRENTE (nunca em cima do buraco).
+// Se a próxima plataforma ainda não chegou, cria uma plataforma de resgate ligando até ela.
+function resgatarJogador(vyImpulso, cor) {
+    const px = distance + player.x;
+    const idx = platforms.findIndex(p => !p.caindo && p.x + p.w > px + player.w);
+    const alvo = idx >= 0 ? platforms[idx] : null;
+    const yAlvo = alvo ? alvo.baseY : ch * 0.6;
+    if (!alvo || alvo.x > px) {
+        const ini = px - 40;
+        const fim = alvo ? alvo.x : px + 300;
+        const resgate = { x: ini, y: yAlvo, baseY: yAlvo, w: Math.max(fim - ini, player.w + 80), h: ch };
+        if (idx >= 0) platforms.splice(idx, 0, resgate); else platforms.push(resgate);
+    }
+    player.y = yAlvo - player.h;
+    player.ant = null; // teletransporte: não interpola deste passo
+    if (usaPersonagemNovo(player)) limparEfeitosPersonagem(player); // fita não "risca" a tela até o ponto novo
+    player.vy = vyImpulso;
+    player.jumps = 0;
+    player.hurtFrames = PASSOS_INVULNERAVEL;
+    isSlamming = false;
+    for (let i = 0; i < 16; i++) emitirParticula({ x: player.x + player.w / 2, y: player.y + player.h, vx: (Math.random() - 0.5) * 16, vy: -Math.random() * 8, life: 1.3, color: i % 2 === 0 ? cor : '#ffffff', size: Math.random() * 4 + 5, forma: 'brilho', gravidade: 0.2 });
+}
+
+function morrer() {
+    playSound('hit');
+    state = 'dying';
+    passosMorte = PASSOS_ANIM_MORTE;
+    screenShake = TREMOR_MORTE;
+    player.assustado = true;
+    player.hurtFrames = 0;
+    player.vy = -13;
+    if (player.y > ch - player.h) player.y = ch - player.h; // volta para a tela para a animação ser vista
+    player.ant = null;
+    mobileControls.style.display = 'none';
+    // explosão de estrelas pastel saindo do personagem
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+    for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2, v = 5 + Math.random() * 6;
+        emitirParticula({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 2, life: 1.6, size: 6 + Math.random() * 5, color: PALETA.particulas[i % 5], forma: 'brilho', gravidade: 0.12 });
+    }
+}
+
+// Animação de morte: congela um instante, depois o personagem pula e cai girando
+function passoMorte() {
+    passosMorte--;
+    frames++;
+    sortearTremor();
+    if (passosMorte < PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) {
+        player.vy += player.gravity;
+        player.y += player.vy;
+        player.spin -= 0.25;
+        atualizarParticulas();
+    }
+    if (passosMorte <= 0) mostrarGameOver();
+}
+
+function mostrarGameOver() {
+    state = 'gameover';
+    gameOverMenu.classList.remove('hidden');
+    hud.classList.add('hidden');
+    mobileControls.style.display = 'none';
+    finalScore.innerText = Math.floor(score);
+    const ganho = Math.floor(starsCollected * CONVERSAO_ESTRELAS);
+    finalStars.innerText = `${Math.round(starsCollected).toLocaleString()} (+${ganho.toLocaleString()} para a loja)`;
+    document.getElementById('final-phase').innerText = currentPhase + 1;
+    document.getElementById('final-char').innerText = player.char.name;
+
+    // Recorde pessoal (neste aparelho)
+    const pontos = Math.floor(score);
+    const recordeAntigo = parseInt(localStorage.getItem('uniparkourRecorde')) || 0;
+    const novoRecorde = pontos > recordeAntigo;
+    if (novoRecorde) localStorage.setItem('uniparkourRecorde', pontos);
+    document.getElementById('final-recorde').innerText = Math.max(pontos, recordeAntigo).toLocaleString();
+    document.getElementById('novo-recorde').classList.toggle('hidden', !novoRecorde);
+
+    // Parte das estrelas vai para a carteira
+    globalStars += ganho;
+    localStorage.setItem('uniparkourGlobalStars', globalStars);
+    updateGlobalStarsDisplay();
+    salvarMissao();
+    updateMissionUI();
+
+    checkHighScore(Math.floor(score));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// RENDERIZAÇÃO — estilo "noite mágica" (lua, aurora, estrelas) com plataformas de nuvem pastel
+// Camadas de fundo pré-desenhadas em canvas fora da tela; a cada quadro só são deslocadas.
+// ─────────────────────────────────────────────────────────────────────────
+
+const corMix = (a, b, t) => paraHex(misturar(paraRGBA(a), paraRGBA(b), t));
+const rgbaDe = (cor, a) => { const c = paraRGBA(cor); return `rgba(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)},${a})`; };
+
+// Aleatório com semente: o cenário de cada fase sai sempre igual
+function aleatorioSemente(semente) {
+    let s = semente >>> 0;
+    return () => {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+const escalaFundo = () => bgCanvas.width / cw;
+
+// Canvas fora da tela com tamanho LÓGICO (wl × hl) e resolução da tela
+function novoCanvas(wl, hl) {
+    const s = escalaFundo();
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(wl * s));
+    c.height = Math.max(1, Math.ceil(hl * s));
+    c.getContext('2d').setTransform(s, 0, 0, s, 0, 0);
+    return c;
+}
+
+// ── Céu: gradiente que muda devagar ao longo da fase, indo em direção às cores da próxima ──
+const ceuCanvas = document.createElement('canvas');
+ceuCanvas.width = 1; ceuCanvas.height = 256;
+let ceuChave = '';
+
+function progressoNaFase() {
+    const ph = PHASES[currentPhase], prox = PHASES[Math.min(currentPhase + 1, PHASES.length - 1)];
+    if (prox === ph) return 0;
+    return Math.max(0, Math.min(1, (distance - ph.distThreshold) / (prox.distThreshold - ph.distThreshold)));
+}
+
+function desenharCeu(faseIdx, t) {
+    const ph = PHASES[faseIdx], prox = PHASES[Math.min(faseIdx + 1, PHASES.length - 1)];
+    const chave = faseIdx + '|' + Math.round(t * 50);
+    if (chave !== ceuChave) {
+        ceuChave = chave;
+        const g = ceuCanvas.getContext('2d');
+        const topo = corMix(ph.sky[0], prox.sky[0], t), base = corMix(ph.sky[1], prox.sky[1], t);
+        const brilho = corMix(ph.platform.glow, prox.platform.glow, t);
+        const grad = g.createLinearGradient(0, 0, 0, 256);
+        grad.addColorStop(0, corMix(topo, '#05001A', 0.3));
+        grad.addColorStop(0.6, base);
+        grad.addColorStop(1, corMix(base, brilho, 0.3)); // horizonte com a cor da fase
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 1, 256);
+    }
+    bgCtx.save();
+    bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+    bgCtx.imageSmoothingEnabled = true;
+    bgCtx.drawImage(ceuCanvas, 0, 0, 1, 256, 0, 0, bgCanvas.width, bgCanvas.height);
+    bgCtx.restore();
+}
+
+// ── Camadas de parallax (geradas uma vez por fase / tamanho de tela) ──
+function obterCenario(faseIdx) {
+    const chave = faseIdx + '|' + cw + '|' + ch + '|' + bgCanvas.width;
+    if (cacheCenario && cacheCenario.chave === chave) return cacheCenario;
+    const ph = PHASES[faseIdx];
+    const rnd = aleatorioSemente(1234 + faseIdx * 97);
+    const TW = Math.max(cw, 900);           // largura do "azulejo" que se repete na horizontal
+    const onda = (x, n, f) => Math.sin(2 * Math.PI * n * x / TW + f); // n inteiro = emenda perfeita
+
+    // 1) Campo de estrelas (redondas + algumas em cruz)
+    const hE = ch * 0.8;
+    const estrelas = novoCanvas(TW, hE);
+    {
+        const g = estrelas.getContext('2d');
+        for (let i = 0; i < 150; i++) {
+            const x = rnd() * TW, y = rnd() * hE, r = 0.4 + rnd() * 1.2;
+            g.globalAlpha = 0.3 + rnd() * 0.6;
+            g.fillStyle = rnd() < 0.2 ? PALETA.estrelaQuente : PALETA.estrela;
+            g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+        }
+        g.strokeStyle = PALETA.estrela; g.lineCap = 'round';
+        for (let i = 0; i < 12; i++) {
+            const x = rnd() * TW, y = rnd() * hE * 0.8, r = 3 + rnd() * 3;
+            g.globalAlpha = 0.5 + rnd() * 0.4; g.lineWidth = 1;
+            g.beginPath(); g.moveTo(x - r, y); g.lineTo(x + r, y); g.moveTo(x, y - r); g.lineTo(x, y + r); g.stroke();
+            g.beginPath(); g.arc(x, y, 1.3, 0, Math.PI * 2); g.fillStyle = PALETA.estrela; g.fill();
+        }
+        g.globalAlpha = 1;
+    }
+
+    // 2) Aurora: 3 faixas onduladas com degradê vertical, tingidas pela cor da fase
+    const hA = ch * 0.6;
+    const aurora = novoCanvas(TW, hA);
+    {
+        const g = aurora.getContext('2d');
+        for (let k = 0; k < 3; k++) {
+            const cor = corMix(PALETA.aurora[k], ph.platform.glow, 0.35);
+            const base = hA * (0.18 + 0.12 * k), amp = 25 + 15 * k, alt = 70 + 25 * k, f = rnd() * 6;
+            const grad = g.createLinearGradient(0, base - amp, 0, base + amp + alt);
+            grad.addColorStop(0, rgbaDe(cor, 0));
+            grad.addColorStop(0.4, rgbaDe(cor, 0.22));
+            grad.addColorStop(1, rgbaDe(cor, 0));
+            g.fillStyle = grad;
+            // o caminho passa um pouco das bordas do azulejo: assim não aparece emenda vertical
+            g.beginPath();
+            for (let x = -32; x <= TW + 32; x += 16) g.lineTo(x, base + amp * onda(x, k + 1, f));
+            for (let x = TW + 32; x >= -32; x -= 16) g.lineTo(x, base + amp * onda(x, k + 1, f) + alt + 20 * onda(x, k + 2, f + 1));
+            g.closePath(); g.fill();
+        }
+    }
+
+    // 3) Montanhas distantes (enevoadas) e 4) montanhas próximas com pinheiros
+    function montanhas(h, cor, borda, ns, amps, base, pinheiros) {
+        const c = novoCanvas(TW, h);
+        const g = c.getContext('2d');
+        const fs = ns.map(() => rnd() * 6);
+        const alturaEm = (x) => base + ns.reduce((s, n, i) => s + amps[i] * onda(x, n, fs[i]), 0);
+        g.fillStyle = cor;
+        g.beginPath(); g.moveTo(-16, h + 2);
+        for (let x = -16; x <= TW + 16; x += 8) g.lineTo(x, h - alturaEm(x));
+        g.lineTo(TW + 16, h + 2); g.closePath(); g.fill();
+        if (pinheiros) {
+            for (let i = 0; i < pinheiros; i++) {
+                const x = rnd() * TW, y = h - alturaEm(x) + 2, a = 12 + rnd() * 18;
+                g.beginPath(); g.moveTo(x - a * 0.32, y); g.lineTo(x, y - a); g.lineTo(x + a * 0.32, y); g.closePath(); g.fill();
+            }
+        }
+        // luz de borda no topo (cor da fase)
+        g.strokeStyle = borda; g.lineWidth = 2;
+        g.beginPath();
+        for (let x = -16; x <= TW + 16; x += 8) g.lineTo(x, h - alturaEm(x));
+        g.stroke();
+        return c;
+    }
+    const hLonge = ch * 0.5, hPerto = ch * 0.38;
+    const montanhasLonge = montanhas(hLonge, corMix(corMix(ph.sky[1], ph.platform.glow, 0.25), '#FFFFFF', 0.08),
+        rgbaDe(ph.platform.edge, 0.25), [1, 2, 5], [hLonge * 0.18, hLonge * 0.1, hLonge * 0.04], hLonge * 0.45, 0);
+    const montanhasPerto = montanhas(hPerto, corMix(corMix(ph.sky[0], '#000000', 0.35), ph.platform.glow, 0.12),
+        rgbaDe(ph.platform.glow, 0.35), [2, 3, 7], [hPerto * 0.16, hPerto * 0.1, hPerto * 0.04], hPerto * 0.42, 40);
+
+    // 5) Bancos de nuvem baixos e translúcidos (camada mais próxima do fundo)
+    const hN = ch * 0.3;
+    const nuvensBaixas = novoCanvas(TW, hN);
+    {
+        const g = nuvensBaixas.getContext('2d');
+        // todos os círculos num caminho só, preenchido uma vez: transparência uniforme (sem anéis sobrepostos)
+        const banco = new Path2D();
+        const bolha = (x, r) => { banco.moveTo(x + r, hN - r * 0.35); banco.arc(x, hN - r * 0.35, r, 0, Math.PI * 2); };
+        for (let i = 0; i < 26; i++) {
+            const x = (i / 26) * TW + rnd() * 30, r = 26 + rnd() * 36;
+            bolha(x, r);
+            if (x - r < 0) bolha(x + TW, r);
+            if (x + r > TW) bolha(x - TW, r);
+        }
+        g.fillStyle = rgbaDe(corMix('#FFFFFF', ph.platform.edge, 0.3), 0.14);
+        g.fill(banco, 'nonzero');
+    }
+
+    // vaga-lumes: posições-base fixas por fase
+    const vagalumes = Array.from({ length: 14 }, () => ({ x: rnd(), y: 0.3 + rnd() * 0.55, f: rnd() * 6, v: 0.6 + rnd() * 0.8 }));
+
+    cacheCenario = { chave, estrelas, aurora, montanhasLonge, montanhasPerto, nuvensBaixas, hLonge, hPerto, hN, vagalumes };
+    return cacheCenario;
+}
+
+// Desenha um azulejo repetido na horizontal com deslocamento de parallax
+function desenharCamada(img, x0, y) {
+    const s = escalaFundo();
+    const w = img.width / s, h = img.height / s;
+    let x = -(x0 % w);
+    if (x > 0) x -= w;
+    for (; x < cw; x += w) bgCtx.drawImage(img, x, y, w, h);
+}
+
+function spriteLua() {
+    return spriteCache('lua', 220, (g, t) => {
+        const m = t / 2;
+        const halo = g.createRadialGradient(m, m, 30, m, m, m);
+        halo.addColorStop(0, 'rgba(255,240,200,0.35)');
+        halo.addColorStop(1, 'rgba(255,240,200,0)');
+        g.fillStyle = halo; g.fillRect(0, 0, t, t);
+        const disco = g.createRadialGradient(m - 12, m - 12, 4, m, m, 38);
+        disco.addColorStop(0, '#FFFBEA'); disco.addColorStop(1, PALETA.lua);
+        g.fillStyle = disco;
+        g.beginPath(); g.arc(m, m, 36, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(190,160,110,0.22)';
+        [[-10, 8, 7], [12, -6, 5], [6, 16, 4], [-14, -12, 3]].forEach(([dx, dy, r]) => { g.beginPath(); g.arc(m + dx, m + dy, r, 0, Math.PI * 2); g.fill(); });
+    });
+}
+
+let estrelaCadente = null, proxCadente = 300;
+function desenharEstrelaCadente() {
+    if (!estrelaCadente && frames >= proxCadente) {
+        estrelaCadente = { x: cw * (0.35 + Math.random() * 0.6), y: ch * (0.05 + Math.random() * 0.2), inicio: frames };
+        proxCadente = frames + 600 + Math.random() * 900;
+    }
+    const e = estrelaCadente;
+    if (!e) return;
+    const t = (frames - e.inicio) / 45;
+    if (t >= 1 || t < 0) { estrelaCadente = null; return; }
+    const x = e.x - 380 * t, y = e.y + 170 * t;
+    const grad = bgCtx.createLinearGradient(x, y, x + 70, y - 31);
+    grad.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - t)})`);
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    bgCtx.strokeStyle = grad; bgCtx.lineWidth = 2; bgCtx.lineCap = 'round';
+    bgCtx.beginPath(); bgCtx.moveTo(x, y); bgCtx.lineTo(x + 70, y - 31); bgCtx.stroke();
+}
+
+// Fundo completo: céu, estrelas, lua, aurora, montanhas, nuvens e efeitos de algumas fases
+function desenharFundo(faseIdx, dist, tx, ty) {
+    const ph = PHASES[faseIdx];
+    desenharCeu(faseIdx, state === 'menu' ? 0 : progressoNaFase());
+    const cen = obterCenario(faseIdx);
+    bgCtx.save();
+    bgCtx.translate(tx * 0.5, ty * 0.5);
+
+    desenharCamada(cen.estrelas, dist * 0.02, 0);
+    bgCtx.drawImage(spriteLua(), cw * 0.8 - 110, ch * 0.17 - 110, 220, 220);
+    // estrelas que piscam (sprite de 4 pontas, modo "lighter")
+    bgCtx.save();
+    bgCtx.globalCompositeOperation = 'lighter';
+    for (const bs of bgStars) {
+        const x = ((bs.x - dist * 0.02) % cw + cw) % cw;
+        const a = bs.alpha * (0.5 + 0.5 * Math.sin(frames * 0.07 + bs.fase));
+        if (a < 0.05) continue;
+        bgCtx.globalAlpha = a;
+        const tam = bs.size * 6;
+        bgCtx.drawImage(spriteEstrelinha('#FFFFFF'), x - tam / 2, bs.y - tam / 2, tam, tam);
+    }
+    bgCtx.restore();
+    desenharEstrelaCadente();
+
+    // aurora ondulando devagar
+    bgCtx.globalAlpha = 0.75 + 0.25 * Math.sin(frames * 0.012);
+    desenharCamada(cen.aurora, dist * 0.04 + frames * 0.25, Math.sin(frames * 0.008) * 8);
+    bgCtx.globalAlpha = 1;
+
+    // efeitos especiais de algumas fases
+    if (ph.id === 2 && frames % 90 < 3) {
+        bgCtx.strokeStyle = 'rgba(255,220,120,0.6)'; bgCtx.lineWidth = 2;
+        const lx = (frames * 37) % cw;
+        bgCtx.beginPath(); bgCtx.moveTo(lx, 0); bgCtx.lineTo(lx + 20, ch * 0.4); bgCtx.lineTo(lx - 10, ch * 0.6); bgCtx.lineTo(lx + 30, ch); bgCtx.stroke();
+    } else if (ph.id === 9) {
+        ['#ff8fb8', '#ffc98a', '#fff3a0', '#9be7a8', '#9bd0ff', '#c9a4ff'].forEach((col, i) => {
+            bgCtx.strokeStyle = col; bgCtx.globalAlpha = 0.12; bgCtx.lineWidth = 16;
+            bgCtx.beginPath(); bgCtx.moveTo(0, ch * 0.3 + i * 18);
+            bgCtx.quadraticCurveTo(cw / 2, ch * 0.1 + i * 18, cw, ch * 0.3 + i * 18); bgCtx.stroke();
+        });
+        bgCtx.globalAlpha = 1;
+    }
+
+    desenharCamada(cen.montanhasLonge, dist * 0.12, ch - cen.hLonge);
+    desenharCamada(cen.montanhasPerto, dist * 0.25, ch - cen.hPerto);
+    desenharCamada(cen.nuvensBaixas, dist * 0.5, ch - cen.hN);
+
+    if (ph.id === 3 || ph.id === 16) {
+        bgCtx.fillStyle = gradCache(`lava|${ch}`, () => {
+            const g = bgCtx.createLinearGradient(0, ch * 0.7, 0, ch);
+            g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(255,90,40,0.35)');
+            return g;
+        });
+        bgCtx.fillRect(-20, ch * 0.7, cw + 40, ch * 0.3 + 20);
+    } else if (ph.id === 4) {
+        bgCtx.fillStyle = 'rgba(220,240,255,0.7)';
+        for (let i = 0; i < 18; i++) {
+            const sx = ((i * 211 + frames * (0.6 + (i % 4) * 0.3)) % (cw + 20)) - 10;
+            const sy = (i * 97 + frames * (0.8 + (i % 3) * 0.4)) % ch;
+            bgCtx.beginPath(); bgCtx.arc(cw - sx, sy, 1.5 + (i % 2), 0, Math.PI * 2); bgCtx.fill();
+        }
+    }
+    bgCtx.restore();
+}
+
+// Vaga-lumes na frente (parallax 1,1x), pulsando
+function desenharVagalumes(ctx, dist) {
+    const cen = obterCenario(currentPhase);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const img = spriteLuz(PALETA.vagalume);
+    for (const v of cen.vagalumes) {
+        const x = (((v.x * (cw + 60) - dist * 1.1 * v.v + frames * 0.3) % (cw + 60)) + cw + 60) % (cw + 60) - 30;
+        const y = v.y * ch + Math.sin(frames * 0.02 * v.v + v.f) * 14;
+        ctx.globalAlpha = 0.35 + 0.35 * Math.sin(frames * 0.05 + v.f);
+        ctx.drawImage(img, x - 7, y - 7, 14, 14);
+    }
+    ctx.restore();
+}
+
+// ── Plataformas de nuvem (sprite em cache por largura arredondada, tipo e fase) ──
+const ESPESSURA_NUVEM = 44, MARGEM_NUVEM = 14;
+const cacheNuvens = new Map();
+
+function spriteNuvem(w, tipo, ph) {
+    const W = Math.max(48, Math.round(w / 16) * 16);
+    const s = canvas.width / cw;
+    const chave = `${ph.id}|${W}|${tipo}|${s}`;
+    let c = cacheNuvens.get(chave);
+    if (c) return c;
+    if (cacheNuvens.size > 120) cacheNuvens.clear();
+    const M = MARGEM_NUVEM, T = ESPESSURA_NUVEM;
+    c = document.createElement('canvas');
+    c.width = Math.ceil((W + 2 * M) * s);
+    c.height = Math.ceil((T + 2 * M + 10) * s);
+    c.larguraBase = W;
+    const g = c.getContext('2d');
+    g.setTransform(s, 0, 0, s, M * s, M * s);
+
+    let base = corMix(PALETA.nuvem, ph.platform.edge, 0.12);
+    let sombra = corMix(PALETA.nuvemSombra, ph.platform.glow, 0.25);
+    const contorno = corMix(PALETA.nuvemContorno, ph.platform.glow, 0.15);
+    if (tipo === 'movel') base = corMix(PALETA.nuvemMovel, ph.platform.edge, 0.1);
+    if (tipo === 'chuva') { base = PALETA.nuvemChuva; sombra = corMix(PALETA.nuvemChuva, '#3A2E55', 0.4); }
+
+    // sombra projetada embaixo
+    g.fillStyle = 'rgba(20,8,40,0.35)';
+    g.beginPath(); g.ellipse(W / 2, T + 6, W / 2 - 4, 7, 0, 0, Math.PI * 2); g.fill();
+
+    // forma: laje arredondada + bolhas embaixo + bolinhas no topo (sem passar da linha onde se pisa)
+    const forma = new Path2D();
+    forma.roundRect(0, 0, W, T - 12, [14, 14, 8, 8]);
+    const nb = Math.max(2, Math.round(W / 26));
+    for (let i = 0; i < nb; i++) {
+        const bx = (i + 0.5) * W / nb, r = 13 + ((i * 7) % 5) * 1.6;
+        forma.moveTo(bx + r, T - 14); forma.arc(bx, T - 14, r, 0, Math.PI * 2);
+    }
+    const nt = Math.max(2, Math.round(W / 30));
+    for (let i = 0; i < nt; i++) {
+        const bx = (i + 0.5) * W / nt;
+        forma.moveTo(bx + 7, 6); forma.arc(bx, 6, 7, 0, Math.PI * 2);
+    }
+    g.lineJoin = 'round';
+    g.strokeStyle = contorno; g.lineWidth = 5; g.stroke(forma);   // contorno único por trás
+    g.fillStyle = sombra; g.fill(forma);
+    g.save(); g.clip(forma); g.translate(-2, -6); g.fillStyle = base; g.fill(forma); g.restore();
+    // brilho no topo + linha da cor da fase (identidade de cada fase)
+    g.save(); g.clip(forma);
+    g.fillStyle = 'rgba(255,255,255,0.75)';
+    g.beginPath(); g.roundRect(10, 2, W - 20, 4, 2); g.fill();
+    g.fillStyle = rgbaDe(ph.platform.edge, 0.35);
+    g.fillRect(0, T - 22, W, 3);
+    g.restore();
+
+    if (tipo === 'chuva') {
+        // nuvem de chuva rachada (quebradiça)
+        g.strokeStyle = contorno; g.lineWidth = 1.6; g.lineCap = 'round';
+        g.beginPath();
+        g.moveTo(W * 0.3, 3); g.lineTo(W * 0.36, 14); g.lineTo(W * 0.31, 24);
+        g.moveTo(W * 0.68, 3); g.lineTo(W * 0.63, 16);
+        g.stroke();
+    } else if (tipo === 'movel') {
+        // lacinho de fita na frente (plataforma móvel)
+        g.save(); g.translate(W * 0.18, 8);
+        g.fillStyle = PALETA.particulas[0]; g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 1.5; g.lineJoin = 'round';
+        g.beginPath(); g.moveTo(0, 0); g.lineTo(-8, -5); g.lineTo(-8, 5); g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(0, 0); g.lineTo(8, -5); g.lineTo(8, 5); g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); g.arc(0, 0, 2.6, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.restore();
+    }
+    cacheNuvens.set(chave, c);
+    return c;
+}
+
+function desenharPlataforma(p, ph) {
+    const screenX = p.x - distance;
+    if (screenX > cw + 20 || screenX + p.w < -20) return;
+    const tipo = p.quebradica ? 'chuva' : (p.amp ? 'movel' : 'normal');
+    const img = spriteNuvem(p.w, tipo, ph);
+    const k = p.w / img.larguraBase, M = MARGEM_NUVEM;
+    const tremor = (p.quebradica && p.tempoPisado > 0 && !p.caindo) ? Math.sin(frames * 1.7) * 2 : 0;
+    const s = canvas.width / cw;
+    ctx.drawImage(img, screenX - M * k + tremor, p.y - M, img.width / s * k, img.height / s);
+}
+
+// ── Obstáculos (cristais, cortina de aurora, bloco de cristal) ──
+const cacheObstaculos = new Map();
+function _spriteObstaculo(tipo, ph, s) {
+    const chave = `${tipo}|${ph.id}|${s}`;
+    let c = cacheObstaculos.get(chave);
+    if (c) return c;
+    const [ow, oh] = DIMENSOES_OBSTACULO[tipo];
+    const M = 8;
+    c = document.createElement('canvas');
+    c.width = Math.ceil((ow + 2 * M) * s); c.height = Math.ceil((oh + 2 * M) * s);
+    c.margem = M;
+    const g = c.getContext('2d');
+    g.setTransform(s, 0, 0, s, M * s, M * s);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    if (tipo === 'espinho') {
+        const cor = corMix(PALETA.cristal, ph.platform.glow, 0.25), sombra = corMix(PALETA.cristalSombra, ph.platform.glow, 0.2);
+        const picos = [[0, 13, 0.22, 0], [11, 25, 0.5, 0], [24, 36, 0.78, 0]];
+        const alturas = [oh * 0.75, oh, oh * 0.8];
+        picos.forEach(([x0, x1], i) => {
+            const xm = (x0 + x1) / 2, topo = oh - alturas[i];
+            const caminho = new Path2D();
+            caminho.moveTo(x0, oh); caminho.lineTo(xm, topo); caminho.lineTo(x1, oh); caminho.closePath();
+            g.strokeStyle = PALETA.cristalContorno; g.lineWidth = 3; g.stroke(caminho);
+            g.fillStyle = sombra; g.fill(caminho);
+            g.fillStyle = cor;
+            g.beginPath(); g.moveTo(x0, oh); g.lineTo(xm, topo); g.lineTo(xm, oh); g.closePath(); g.fill();
+            g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1;
+            g.beginPath(); g.moveTo(xm - 1, topo + 4); g.lineTo(x0 + 3, oh - 2); g.stroke();
+        });
+    } else if (tipo === 'barreira') {
+        // cortina de aurora (o dash atravessa)
+        const cor = corMix(PALETA.barreira[0], ph.platform.glow, 0.3), cor2 = corMix(PALETA.barreira[1], ph.platform.glow, 0.3);
+        const grad = g.createLinearGradient(0, 0, 0, oh);
+        grad.addColorStop(0, rgbaDe(cor, 0.15)); grad.addColorStop(0.5, rgbaDe(cor2, 0.75)); grad.addColorStop(1, rgbaDe(cor, 0.9));
+        g.fillStyle = grad;
+        g.beginPath();
+        for (let y = 0; y <= oh; y += 6) g.lineTo(2 + Math.sin(y * 0.15) * 2, y);
+        for (let y = oh; y >= 0; y -= 6) g.lineTo(ow - 2 + Math.sin(y * 0.15 + 1) * 2, y);
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 2;
+        g.beginPath(); for (let y = 0; y <= oh; y += 6) g.lineTo(ow / 2 + Math.sin(y * 0.12) * 3, y); g.stroke();
+    } else {
+        // bloco de cristal rachado (o slam quebra)
+        const cor = corMix(PALETA.bloco, ph.platform.glow, 0.2), sombra = corMix(PALETA.blocoSombra, ph.platform.glow, 0.15);
+        const forma = new Path2D(); forma.roundRect(0, 0, ow, oh, 7);
+        g.strokeStyle = PALETA.blocoContorno; g.lineWidth = 4; g.stroke(forma);
+        g.fillStyle = sombra; g.fill(forma);
+        g.save(); g.clip(forma); g.translate(-3, -4); g.fillStyle = cor; g.fill(forma); g.restore();
+        g.fillStyle = 'rgba(255,255,255,0.35)';
+        g.beginPath(); g.moveTo(5, 5); g.lineTo(ow * 0.55, 5); g.lineTo(5, oh * 0.55); g.closePath(); g.fill();
+        g.strokeStyle = PALETA.blocoContorno; g.lineWidth = 1.8;
+        g.beginPath();
+        g.moveTo(ow * 0.2, 0); g.lineTo(ow * 0.45, oh * 0.4); g.lineTo(ow * 0.3, oh * 0.7); g.lineTo(ow * 0.55, oh);
+        g.moveTo(ow * 0.45, oh * 0.4); g.lineTo(ow * 0.8, oh * 0.3);
+        g.stroke();
+    }
+    cacheObstaculos.set(chave, c);
+    return c;
+}
+
+// Ícone vetorial acima do obstáculo (substitui os emojis): >> = dash, ⇩ = slam
+function desenharIcone(ctx, x, y, tipo) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const caminho = new Path2D();
+    if (tipo === 'dash') {
+        caminho.moveTo(-8, -5); caminho.lineTo(-3, 0); caminho.lineTo(-8, 5);
+        caminho.moveTo(1, -5); caminho.lineTo(6, 0); caminho.lineTo(1, 5);
+    } else {
+        caminho.moveTo(0, -7); caminho.lineTo(0, 5);
+        caminho.moveTo(-5, 0); caminho.lineTo(0, 5); caminho.lineTo(5, 0);
+    }
+    ctx.strokeStyle = PALETA.textoContorno; ctx.lineWidth = 5; ctx.stroke(caminho);
+    ctx.strokeStyle = PALETA.texto; ctx.lineWidth = 2.4; ctx.stroke(caminho);
+    ctx.restore();
+}
+
+function desenharObstaculo(ob, ph) {
+    const sx = ob.x - distance;
+    if (sx > cw || sx + ob.w < 0) return;
+    const y = ob.plat.y - ob.h;
+    const img = _spriteObstaculo(ob.tipo, ph, canvas.width / cw);
+    const s = canvas.width / cw, M = img.margem;
+    ctx.save();
+    if (ob.tipo === 'barreira') ctx.globalAlpha = 0.75 + 0.25 * Math.sin(frames * 0.2);
+    if (ob.tipo !== 'bloco') {
+        // brilho atrás (sprite, sem shadowBlur)
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha *= 0.6;
+        ctx.drawImage(spriteLuz(ph.platform.glow), sx - 14, y - 10, ob.w + 28, ob.h + 20);
+        ctx.restore();
+    }
+    ctx.drawImage(img, sx - M, y - M, img.width / s, img.height / s);
+    ctx.restore();
+    if (ob.tipo === 'barreira') desenharIcone(ctx, sx + ob.w / 2, y - 12, 'dash');
+    else if (ob.tipo === 'bloco') desenharIcone(ctx, sx + ob.w / 2, y - 12, 'slam');
+}
+
+// Sombra no chão sob o personagem (ajuda a ler a altura do pulo)
+function desenharSombraJogador() {
+    const px = distance + player.x + player.w / 2;
+    const pes = player.y + player.h;
+    let chao = null;
+    for (const p of platforms) {
+        if (p.caindo || px < p.x || px > p.x + p.w || p.y < pes - 5) continue;
+        if (!chao || p.y < chao.y) chao = p;
+    }
+    if (!chao) return;
+    const k = Math.max(0.25, Math.min(1, 1 - (chao.y - pes) / 300));
+    ctx.save();
+    ctx.globalAlpha = 0.35 * k;
+    ctx.fillStyle = PALETA.sombraJogador;
+    ctx.beginPath();
+    ctx.ellipse(player.x + player.w / 2, chao.y + 3, player.w * 0.55 * k, 5 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+// Texto com contorno (sem shadowBlur)
+function textoContornado(ctx, txt, x, y, cor, contorno, larguraContorno) {
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = contorno; ctx.lineWidth = larguraContorno;
+    ctx.strokeText(txt, x, y);
+    ctx.fillStyle = cor;
+    ctx.fillText(txt, x, y);
 }
 
 function render() {
     const ph = PHASES[currentPhase];
+    // Tremor de tela: sorteado no passo de física (não muda a cada quadro desenhado em 144 Hz)
+    const tx = tremorX, ty = tremorY;
 
-    // ── BACKGROUND gradient (phase-themed) ──
-    bgCtx.clearRect(0, 0, cw, ch);
+    // ── FUNDO ──
+    desenharFundo(currentPhase, distance, tx, ty);
+
+    // ── CANVAS DO JOGO ──
+    ctx.clearRect(0, 0, cw, ch); // limpa ANTES do tremor (sem faixas sujas nas bordas)
     ctx.save();
-    if (screenShake > 0) {
-        let dx = (Math.random() - 0.5) * screenShake;
-        let dy = (Math.random() - 0.5) * screenShake;
-        ctx.translate(dx, dy);
-        screenShake--;
-    }
-    let skyGrad = bgCtx.createLinearGradient(0, 0, 0, ch);
-    skyGrad.addColorStop(0, ph.sky[0]);
-    skyGrad.addColorStop(1, ph.sky[1]);
-    bgCtx.fillStyle = skyGrad;
-    bgCtx.fillRect(0, 0, cw, ch);
+    ctx.translate(tx, ty);
 
-    // ── PARALLAX LAYERS ──
-    // Mountains (Layer 1)
-    bgCtx.fillStyle = ph.platform.edge;
-    bgCtx.globalAlpha = 0.2;
-    bgCtx.beginPath();
-    bgCtx.moveTo(0, ch);
-    for (let i = 0; i < cw; i += 150) {
-        let py = ch - 150 + Math.sin((i + distance * 0.2) * 0.01) * 80;
-        bgCtx.lineTo(i, py);
-    }
-    bgCtx.lineTo(cw, ch);
-    bgCtx.fill();
+    for (const p of platforms) desenharPlataforma(p, ph);
+    for (const ob of obstaculos) if (!ob.destruido) desenharObstaculo(ob, ph);
+    desenharVagalumes(ctx, distance);
 
-    // Near Hills (Layer 2)
-    bgCtx.fillStyle = ph.platform.glow;
-    bgCtx.globalAlpha = 0.15;
-    bgCtx.beginPath();
-    bgCtx.moveTo(0, ch);
-    for (let i = 0; i < cw; i += 100) {
-        let py = ch - 80 + Math.sin((i + distance * 0.4) * 0.02) * 40;
-        bgCtx.lineTo(i, py);
-    }
-    bgCtx.lineTo(cw, ch);
-    bgCtx.fill();
-    bgCtx.globalAlpha = 1.0;
-
-    // Phase-specific background effects
-    if (ph.id === 2) {
-        // Lightning bolts in storm
-        if (frames % 90 < 3) {
-            bgCtx.strokeStyle = 'rgba(255,220,0,0.6)';
-            bgCtx.lineWidth = 2;
-            bgCtx.beginPath();
-            let lx = Math.random() * cw;
-            bgCtx.moveTo(lx, 0);
-            bgCtx.lineTo(lx + 20, ch * 0.4);
-            bgCtx.lineTo(lx - 10, ch * 0.6);
-            bgCtx.lineTo(lx + 30, ch);
-            bgCtx.stroke();
-        }
-    } else if (ph.id === 3) {
-        // Lava glow at bottom
-        let lavaG = bgCtx.createLinearGradient(0, ch * 0.7, 0, ch);
-        lavaG.addColorStop(0, 'rgba(0,0,0,0)');
-        lavaG.addColorStop(1, 'rgba(255,60,0,0.4)');
-        bgCtx.fillStyle = lavaG;
-        bgCtx.fillRect(0, ch * 0.7, cw, ch * 0.3);
-    } else if (ph.id === 4) {
-        // Snow particles
-        bgCtx.fillStyle = 'rgba(200,230,255,0.6)';
-        for (let i = 0; i < 5; i++) {
-            let sx = (frames * (i + 1) * 3 + i * 300) % cw;
-            let sy = (frames * (i + 1) * 1.5 + i * 200) % ch;
-            bgCtx.beginPath(); bgCtx.arc(sx, sy, 1.5, 0, Math.PI * 2); bgCtx.fill();
-        }
-    } else if (ph.id === 9) {
-        // Rainbow streak
-        let rainbowColors = ['#ff0000', '#ff8800', '#ffff00', '#00ff00', '#0088ff', '#8800ff'];
-        rainbowColors.forEach((col, i) => {
-            bgCtx.strokeStyle = col;
-            bgCtx.globalAlpha = 0.15;
-            bgCtx.lineWidth = 18;
-            bgCtx.beginPath();
-            bgCtx.moveTo(0, ch * 0.3 + i * 20);
-            bgCtx.quadraticCurveTo(cw / 2, ch * 0.1 + i * 20, cw, ch * 0.3 + i * 20);
-            bgCtx.stroke();
-        });
-        bgCtx.globalAlpha = 1.0;
-    }
-
-    // Stars / particles in background
-    bgCtx.fillStyle = '#ffffff';
-    for (let bs of bgStars) {
-        bs.x -= bs.speed * (gameSpeed * 0.1);
-        if (bs.x < 0) bs.x = cw;
-        bgCtx.beginPath();
-        bgCtx.globalAlpha = Math.random() * 0.5 + 0.4;
-        bgCtx.arc(bs.x, bs.y, bs.size, 0, Math.PI * 2);
-        bgCtx.fill();
-    }
-    bgCtx.globalAlpha = 1.0;
-
-    // ── GAME CANVAS ──
-    ctx.clearRect(0, 0, cw, ch);
-
-    // Platforms (phase-themed)
-    for (let p of platforms) {
-        let screenX = p.x - distance;
-        let platGrad = ctx.createLinearGradient(0, p.y, 0, p.y + 80);
-        platGrad.addColorStop(0, ph.platform.top);
-        platGrad.addColorStop(1, ph.bgColor);
-        ctx.fillStyle = platGrad;
-        ctx.shadowColor = ph.platform.glow;
-        ctx.shadowBlur = 18;
-        ctx.beginPath();
-        ctx.roundRect(screenX, p.y, p.w, p.h, [8, 8, 0, 0]);
-        ctx.fill();
-        // Glowing edge line
-        ctx.fillStyle = ph.platform.edge;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = ph.platform.edge;
-        ctx.fillRect(screenX, p.y, p.w, 4);
-        ctx.shadowBlur = 0;
-    }
-
-    // Stars, feathers & powerup items
+    // Estrelas, penas e power-ups (só os que estão na tela)
     for (let s of stars) {
-        if (!s.collected) drawStar(ctx, s.x - distance, s.y, s.size, s.collected, (frames * 0.05) + s.oscOffset, s.starType);
+        const sx = s.x - distance;
+        if (!s.collected && sx > -40 && sx < cw + 40) drawStar(ctx, sx, s.y, s.size, s.collected, (frames * 0.05) + s.oscOffset, s.starType);
     }
     for (let f of feathers) {
         if (!f.collected) drawFeather(ctx, f.x - distance, f.y, f.size, f.collected, (frames * 0.05) + f.oscOffset);
     }
     for (let pu of powerupItems) {
-        if (!pu.collected) {
-            let puScreen = { ...pu, x: pu.x - distance };
-            drawPowerupItem(ctx, puScreen, (frames * 0.05) + pu.oscOffset);
-        }
+        const sx = pu.x - distance;
+        if (!pu.collected && sx > -40 && sx < cw + 40) drawPowerupItem(ctx, pu, (frames * 0.05) + pu.oscOffset, distance);
     }
 
-    // Magnet field behind player
     if (isMagnetActive) drawMagnetField(ctx, player);
 
-    // Particles
-    for (let pt of particles) {
-        ctx.fillStyle = pt.color;
-        ctx.globalAlpha = pt.life;
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, pt.size || 3, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    ctx.globalAlpha = 1.0;
+    desenharParticulas(ctx);
+    desenharSombraJogador();
+
+    const cx = player.x + player.w / 2; // player.x já é coordenada de tela
+    const cy = player.y + player.h / 2;
 
     // ── AURAS & SKINS ──
     if (selectedSkin !== 'default') {
         const auraConfig = skins.find(s => s.id === selectedSkin);
-        if (auraConfig) {
+        if (auraConfig && auraConfig.colors) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            let cx = player.x + player.w / 2 - distance;
-            let cy = player.y + player.h / 2;
-            let aSize = Math.max(player.w, player.h) * 1.5;
-
-            ctx.beginPath();
-            let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, aSize);
-
-            let colorHex = auraConfig.colors[0];
-            // Helper to get raw RGB from Hex roughly
-            grad.addColorStop(0, colorHex + '88'); // 50% opacity append
-            grad.addColorStop(1, colorHex + '00'); // 0% opacity append
-
-            if (frames % 4 === 0) {
-                particles.push({
-                    x: player.x + player.w / 2, y: cy,
-                    vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4,
-                    life: 1, color: Math.random() > 0.5 ? auraConfig.colors[0] : auraConfig.colors[1], size: 4
-                });
-            }
-
-            ctx.fillStyle = grad;
-            ctx.arc(cx, cy, aSize, 0, Math.PI * 2);
-            ctx.fill();
+            const aSize = Math.max(player.w, player.h) * 3;
+            ctx.drawImage(spriteLuz(auraConfig.colors[0]), cx - aSize / 2, cy - aSize / 2, aSize, aSize);
             ctx.restore();
         }
     }
 
-    // Player and Shield
+    // Brilho do voo: um sprite só, atrás do personagem
+    if (isFlying) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const t = 130 * (player.w / 50);
+        ctx.drawImage(spriteLuz('#AADDFF'), cx - t / 2, cy - t / 2, t, t);
+        ctx.restore();
+    }
+
+    // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
+    if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed);
     if (player.char.id === 20) { drawDragon(ctx, player); }
     else if (player.char.id === 21) { drawCat(ctx, player); }
     else if (player.char.id === 22) { drawRabbit(ctx, player); }
+    else if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, frames * PASSO_FISICA, 1.3); }
     else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
 
-    // ── PHASE BANNER ──
+    // ── FAIXA DE NOVA FASE ──
     if (phaseAnnounceFrames > 0) {
-        phaseAnnounceFrames--;
         let prog = phaseAnnounceFrames / 180;
         let alpha = prog > 0.8 ? (1 - prog) / 0.2 :
             prog < 0.15 ? prog / 0.15 : 1.0;
         ctx.save();
         ctx.globalAlpha = alpha * 0.95;
-        // Banner background
-        let bh = 90;
+        let bh = 96;
         let bannerGrad = ctx.createLinearGradient(0, ch / 2 - bh / 2, 0, ch / 2 + bh / 2);
-        bannerGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        bannerGrad.addColorStop(0.3, 'rgba(0,0,20,0.92)');
-        bannerGrad.addColorStop(0.7, 'rgba(0,0,20,0.92)');
-        bannerGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        bannerGrad.addColorStop(0, 'rgba(20,10,50,0)');
+        bannerGrad.addColorStop(0.3, 'rgba(20,10,50,0.88)');
+        bannerGrad.addColorStop(0.7, 'rgba(20,10,50,0.88)');
+        bannerGrad.addColorStop(1, 'rgba(20,10,50,0)');
         ctx.fillStyle = bannerGrad;
         ctx.fillRect(0, ch / 2 - bh / 2, cw, bh);
-        // Phase number
-        ctx.font = 'bold 14px Outfit, sans-serif';
-        ctx.fillStyle = ph.platform.edge;
         ctx.textAlign = 'center';
-        ctx.shadowColor = ph.platform.edge;
-        ctx.shadowBlur = 12;
-        ctx.fillText(`FASE ${currentPhase + 1} DE 10`, cw / 2, ch / 2 - 16);
-        // Phase name
-        ctx.font = 'bold 32px Outfit, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = ph.platform.glow;
-        ctx.shadowBlur = 20;
-        ctx.fillText(ph.name, cw / 2, ch / 2 + 18);
+        ctx.font = `600 15px ${FONTE_JOGO}`;
+        textoContornado(ctx, `FASE ${currentPhase + 1} DE ${PHASES.length}`, cw / 2, ch / 2 - 16, ph.platform.edge, PALETA.textoContorno, 4);
+        ctx.font = `700 34px ${FONTE_JOGO}`;
+        textoContornado(ctx, ph.name, cw / 2, ch / 2 + 20, PALETA.texto, PALETA.textoContorno, 6);
         ctx.restore();
     }
 
-    // ── PHASE INDICATOR on HUD ── (top center, away from powerup badges)
+    // ── INDICADOR DE FASE (pílula no topo, centro) ──
     ctx.save();
-    ctx.font = 'bold 13px Outfit, sans-serif';
-    ctx.fillStyle = ph.platform.edge;
+    ctx.font = `600 15px ${FONTE_JOGO}`;
     ctx.textAlign = 'center';
-    ctx.shadowBlur = 8;
-    ctx.fillText(`✦ Fase ${currentPhase + 1}: ${ph.name} ✦`, cw / 2, 70);
+    const rotulo = `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`;
+    const larg = ctx.measureText(rotulo).width + 28;
+    ctx.fillStyle = 'rgba(20,10,50,0.55)';
+    ctx.strokeStyle = rgbaDe(ph.platform.edge, 0.6); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(cw / 2 - larg / 2, 54, larg, 28, 14); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PALETA.texto;
+    ctx.fillText(rotulo, cw / 2, 73);
+    ctx.restore();
 
-    // ── FLOATING TEXTS (Pop-ups) ──
+    // ── TEXTOS FLUTUANTES (com contorno, sem shadowBlur) ──
+    ctx.save();
+    ctx.font = `700 24px ${FONTE_JOGO}`;
+    ctx.textAlign = 'center';
     for (let ft of floatingTexts) {
-        ctx.save();
         ctx.globalAlpha = Math.max(0, ft.life);
-        ctx.font = 'bold 24px Outfit, sans-serif';
-        ctx.fillStyle = '#fff';
-        ctx.shadowColor = ft.color;
-        ctx.shadowBlur = 10;
-        ctx.textAlign = 'center';
-        ctx.fillText(ft.text, ft.x, ft.y);
-        ctx.restore();
+        textoContornado(ctx, ft.text, ft.x, ft.y, PALETA.texto, ft.color, 5);
     }
+    ctx.restore();
 
-    ctx.restore();
-    ctx.restore();
+    ctx.restore(); // tremor
 }
 
-// Menus Logic
+// ─────────────────────────────────────────────────────────────────────────
+// MENUS
+// ─────────────────────────────────────────────────────────────────────────
 btnStart.onclick = () => { startMusic(); initGame(); };
 btnChars.onclick = () => {
     mainMenu.classList.add('hidden');
@@ -3247,30 +4261,30 @@ btnBack.onclick = () => {
 };
 btnRestart.onclick = () => { startMusic(); initGame(); };
 btnMenuGo.onclick = () => {
+    state = 'menu'; // sem isto o Enter no menu reiniciava a partida e o fundo ficava parado
     gameOverMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
     mobileControls.style.display = 'none';
     ctx.clearRect(0, 0, cw, ch);
+    iniciarLoopMenu();
 };
 
-setInterval(() => {
-    if (state === 'menu') {
-        bgCtx.clearRect(0, 0, cw, ch);
-        const ph0 = PHASES[0];
-        let skyGrad = bgCtx.createLinearGradient(0, 0, 0, ch);
-        skyGrad.addColorStop(0, ph0.sky[0]);
-        skyGrad.addColorStop(1, ph0.sky[1]);
-        bgCtx.fillStyle = skyGrad;
-        bgCtx.fillRect(0, 0, cw, ch);
-        bgCtx.fillStyle = '#ffffff';
-        for (let bs of bgStars) {
-            bs.x -= bs.speed * 0.5;
-            if (bs.x < 0) bs.x = cw;
-            bgCtx.beginPath();
-            bgCtx.globalAlpha = Math.random() * 0.5 + 0.5;
-            bgCtx.arc(bs.x, bs.y, bs.size, 0, Math.PI * 2);
-            bgCtx.fill();
-        }
-        bgCtx.globalAlpha = 1.0;
-    }
-}, 1000 / 60);
+// Tela inicial: Espaço começa (só com o menu principal aberto)
+window.addEventListener('keydown', (e) => {
+    if (state !== 'menu' || mainMenu.classList.contains('hidden') || e.repeat) return;
+    if (e.code === 'Space') { e.preventDefault(); btnStart.click(); }
+});
+
+// Fundo animado do menu: o mesmo cenário da Fase 1 passando devagar
+let rafMenu = null, distanciaMenu = 0;
+function loopMenu() {
+    if (state !== 'menu') { rafMenu = null; return; }
+    frames++;
+    distanciaMenu += 1.2;
+    desenharFundo(0, distanciaMenu, 0, 0);
+    rafMenu = requestAnimationFrame(loopMenu);
+}
+function iniciarLoopMenu() {
+    if (rafMenu === null) rafMenu = requestAnimationFrame(loopMenu);
+}
+iniciarLoopMenu();
