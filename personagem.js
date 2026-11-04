@@ -15,6 +15,7 @@ const PALETA_PADRAO = {
     contorno: '#4A2763',
     crina: ['#FF5FA8', '#FF9CCF', '#B77BFF', '#6FD3FF'], contornoCrina: '#7A2E6E',
     crinaFundo: ['#C9478F', '#8C5AD0'],
+    crinaSombra: ['#D2468E', '#E07AB4', '#9561DA', '#4FAEDB'],   // sombra de cada cor de crina (separa as mechas sem linha)
     chifre: { base: '#FFC94A', sombra: '#E0962B', brilho: '#FFF4C2', contorno: '#9A5A12' },
     casco: { base: '#8A4F7D', sombra: '#5E3158', brilho: '#C08AB4' },
     focinho: '#FFD9EA', narina: '#C77AA0', orelhaDentro: '#FFB3D1', bochecha: 'rgba(255,143,184,0.55)',
@@ -70,6 +71,7 @@ function paletaDe(c) {
             : paraHex(misturar(b, _ROXO_CONT, 0.78)),
         crina: crina.map(paraHex),
         crinaFundo: [paraHex(misturar(crina[0], _ROXO_SOMBRA, 0.35)), paraHex(misturar(crina[2], _ROXO_SOMBRA, 0.35))],
+        crinaSombra: crina.map(t => paraHex(misturar(t, _ROXO_SOMBRA, 0.25))),
         contornoCrina: paraHex(misturar(m0, _ROXO_CONT, 0.7)),
         chifre: [1, 4, 19].includes(c.id) ? CHIFRE_PEROLA : PALETA_PADRAO.chifre,
         casco: escuro ? { base: '#2A1E36', sombra: '#140C1E', brilho: '#5A4A70' } : PALETA_PADRAO.casco,
@@ -106,10 +108,17 @@ const FORMAS = (() => {
     pescoco.bezierCurveTo(9, -6, 9, -2, 7, 3);               // garganta
     pescoco.closePath();
 
-    // Cabeça (coordenadas da cabeça; pivô na nuca) — crânio + focinho numa silhueta só
+    // Cabeça (coordenadas da cabeça; pivô na nuca) — UM contorno só, em curvas:
+    // nuca → alto da cabeça → testa → chanfro → ponta do focinho → queixo → bochecha
     const cabeca = new Path2D();
-    cabeca.arc(3, -3, 8.5, 0, Math.PI * 2);
-    cabeca.ellipse(11, 1, 7, 5.5, 0.25, 0, Math.PI * 2);
+    cabeca.moveTo(-5.5, 2);
+    cabeca.bezierCurveTo(-7, -6, -3, -12, 3, -12);        // nuca e alto da cabeça
+    cabeca.bezierCurveTo(8, -12, 10.5, -8.6, 12.4, -5.2); // testa
+    cabeca.bezierCurveTo(14.4, -3.2, 18.4, -3, 19.2, 0.4); // chanfro até a ponta do focinho
+    cabeca.bezierCurveTo(19.8, 3.8, 17.4, 6.4, 13.6, 6.2); // focinho arredondado
+    cabeca.bezierCurveTo(10.2, 6, 8, 7.6, 4, 7.9);         // queixo
+    cabeca.bezierCurveTo(-0.6, 8.2, -5, 6.2, -5.5, 2);     // bochecha
+    cabeca.closePath();
 
     const focinho = new Path2D();
     focinho.ellipse(12, 1.6, 5.6, 4.3, 0.25, 0, Math.PI * 2);
@@ -178,15 +187,18 @@ const ESPECIES = {
 function especieDe(c) {
     return c.id === 20 ? ESPECIES.dragao : c.id === 21 ? ESPECIES.gato : c.id === 22 ? ESPECIES.coelho : ESPECIES.unicornio;
 }
+// centro e raio do degradê do focinho em cada formato de cabeça
+const CENTRO_FOCINHO = { cabeca: [15.5, 2, 7.5], cabecaDragao: [16.5, 1.5, 8.5], cabecaGato: [12, 3, 6], cabecaCoelho: [12, 3, 6] };
 const CHIFRE_OSSO = { base: '#F5E6C8', sombra: '#C9B48A', brilho: '#FFFFFF', contorno: '#5A3A1A' };
 
 // Formas extras das outras espécies (coordenadas da cabeça)
 (() => {
     const novo = (f) => { const p = new Path2D(); f(p); return p; };
-    FORMAS.cabecaDragao = novo(p => { p.arc(2, -3, 8, 0, Math.PI * 2); p.ellipse(12, 0.5, 9.5, 5, 0.12, 0, Math.PI * 2); });
+    // cabeças das outras espécies também em UM contorno (sem "dois círculos")
+    FORMAS.cabecaDragao = novo(p => { p.moveTo(-5, 2); p.bezierCurveTo(-6, -6, -2, -11, 3, -11); p.bezierCurveTo(7, -11, 9, -8, 11, -5); p.bezierCurveTo(14, -3.4, 20, -3.6, 21.6, -0.6); p.bezierCurveTo(22.6, 2, 21, 5, 17, 5); p.bezierCurveTo(13, 5, 8, 6.6, 4, 7); p.bezierCurveTo(-1, 7.5, -4.5, 5.6, -5, 2); p.closePath(); });
     FORMAS.focinhoDragao = novo(p => p.ellipse(13.5, 1.8, 7, 3.4, 0.12, 0, Math.PI * 2));
-    FORMAS.cabecaGato = novo(p => { p.arc(3, -3, 9.5, 0, Math.PI * 2); p.ellipse(10, 2, 5.2, 4.2, 0.15, 0, Math.PI * 2); });
-    FORMAS.cabecaCoelho = novo(p => { p.arc(3, -3, 9, 0, Math.PI * 2); p.ellipse(10, 2, 5.4, 4.4, 0.15, 0, Math.PI * 2); });
+    FORMAS.cabecaGato = novo(p => { p.moveTo(-6.4, 1); p.bezierCurveTo(-7.4, -8, -2, -12.6, 3.5, -12.6); p.bezierCurveTo(9.4, -12.6, 13, -8.4, 13.2, -3.4); p.bezierCurveTo(13.4, -1.4, 15.4, -0.4, 15.6, 2); p.bezierCurveTo(15.8, 5, 13, 6.8, 9.6, 6.8); p.bezierCurveTo(6, 7.2, 0, 7.8, -3.2, 5.6); p.bezierCurveTo(-5.2, 4.4, -6.2, 3, -6.4, 1); p.closePath(); });
+    FORMAS.cabecaCoelho = novo(p => { p.moveTo(-6, 1); p.bezierCurveTo(-7, -7.6, -2, -12, 3, -12); p.bezierCurveTo(9, -12, 12.6, -8, 13, -3.6); p.bezierCurveTo(13.4, -1.6, 15.6, -0.6, 15.8, 1.8); p.bezierCurveTo(16, 5, 13, 6.8, 9.6, 6.8); p.bezierCurveTo(6, 7, 0, 7.6, -3, 5.4); p.bezierCurveTo(-5, 4.2, -6, 3, -6, 1); p.closePath(); });
     FORMAS.focinhoGato = novo(p => p.ellipse(10.8, 2.8, 4.2, 3.2, 0.15, 0, Math.PI * 2));
     FORMAS.orelhaGato = novo(p => { p.moveTo(-4, 0); p.lineTo(-3, -10); p.lineTo(4, -1); p.closePath(); });
     FORMAS.orelhaGatoDentro = novo(p => { p.moveTo(-2.6, -1); p.lineTo(-2.3, -7); p.lineTo(2, -1.4); p.closePath(); });
@@ -478,17 +490,15 @@ function desenharBoca(ctx, p, pal, lw, humor = 'correndo') {
 // ─── Crina e cauda (B2) ───
 // Ângulos base (graus, no sistema do corpo; 180° = para trás, 270° = para cima) por estado
 const CRINA_BASE = {
-    correndo: [166, 175, 184, 192, 200],
-    subindo: [176, 180, 184, 188, 192],    // colada para trás pelo vento
+    correndo: [128, 140, 152, 164, 176],   // cai pelo pescoço e flui para trás
+    subindo: [160, 166, 172, 178, 184],    // colada para trás pelo vento
     caindo: [222, 230, 238, 246, 254]      // sobe com a queda
 };
 const CAUDA_BASE = {
-    correndo: [148, 158, 168, 178, 190],
-    subindo: [158, 163, 168, 173, 178],
+    correndo: [128, 138, 148, 158, 168],   // cauda caída, enrolando no fim
+    subindo: [150, 156, 162, 168, 174],
     caindo: [205, 212, 220, 228, 236]
 };
-const CRINA_L = [16, 20, 21, 17, 12], CRINA_W = [9, 10, 9, 8, 7], CRINA_COR = [0, 1, 2, 3, 1];   // crina cheia (lê bem a ~65 px)
-const CAUDA_L = [17, 22, 25, 22, 16], CAUDA_COR = [1, 0, 2, 3, 2];
 
 // Mistura os ângulos dos 3 estados conforme o quanto está no ar (mistura) e a velocidade vertical
 function angulosEstado(tabela, p, i) {
@@ -512,40 +522,131 @@ function atualizarOnda(p, tempo, vel) {
     };
 }
 
-function desenharCrina(ctx, p, pal, lw, onda, angPescoco, fundo) {
-    if (fundo) {
-        // 2 mechas escuras atrás do pescoço: dão volume à crina
-        for (let i = 0; i < 2; i++) {
-            const t = 0.25 + i * 0.4;
-            const rx = 3 + (-5 - 3) * t, ry = -14.5 + (-2 + 14.5) * t;
-            const a = (angulosEstado(CRINA_BASE, p, i + 1) - 8) * Math.PI / 180 - angPescoco
-                + onda.A * Math.sin(onda.fase - 0.6 * i - 0.3);
-            desenharMecha(ctx, rx, ry, a, 0.3 + onda.B * 0.5 * Math.sin(onda.fase - 0.6 * i - 1.1), 16, 7,
-                pal.crinaFundo[i], 'rgba(255,255,255,0.2)', pal.contornoCrina, lw * 0.75);
-        }
-        return;
+// ─── Cabelo: crina, cauda e topete como UMA massa de mechas ───
+// Cada mecha é um cacho: a "espinha" curva cada vez mais perto da ponta (enrola), e a largura
+// incha no primeiro terço e afina até a ponta. O grupo inteiro recebe um só contorno por fora;
+// por dentro as mechas se separam só por sombra e cor (sem linha entre elas = menos "artificial").
+function caminhoMecha(x, y, a, cacho, L, W) {
+    // Mecha de cabelo de desenho animado: larga, com a ponta arredondada que enrola em cacho.
+    // cacho = quanto a ponta gira no total (rad); a curva fica concentrada no fim da mecha.
+    const N = 12, esq = [], dir = [], espinha = [];
+    let px = x, py = y, ang = a;
+    const passo = L / N;
+    let somaPeso = 0;
+    for (let i = 1; i <= N; i++) somaPeso += Math.pow(i / N, 2.2);
+    for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        // largura: cheia no meio, afinando só no fim (ponta redonda, não espetada)
+        const w = W / 2 * (0.82 + 0.3 * Math.sin(Math.PI * t * 0.85)) * Math.sqrt(Math.max(0, 1 - Math.pow(t, 3)));
+        const nx = -Math.sin(ang), ny = Math.cos(ang);
+        esq.push([px + nx * w, py + ny * w]);
+        dir.push([px - nx * w, py - ny * w]);
+        espinha.push([px, py]);
+        px += Math.cos(ang) * passo; py += Math.sin(ang) * passo;
+        ang += cacho * Math.pow((i + 1) / N, 2.2) / somaPeso;
     }
-    // 5 mechas ao longo da crista do pescoço (de trás para a frente)
-    for (let i = 4; i >= 0; i--) {
-        const t = i / 4;
-        const rx = 3 + (-5 - 3) * t, ry = -14.5 + (-2 + 14.5) * t;
-        // ângulo em relação ao corpo (desconta a inclinação do pescoço)
-        const a = angulosEstado(CRINA_BASE, p, i) * Math.PI / 180 - angPescoco
-            + onda.A * Math.sin(onda.fase - 0.6 * i);
-        const dobra = 0.2 + onda.B * Math.sin(onda.fase - 0.6 * i - 0.8);
-        desenharMecha(ctx, rx, ry, a, dobra, CRINA_L[i], CRINA_W[i],
-            pal.crina[CRINA_COR[i]], 'rgba(255,255,255,0.45)', pal.contornoCrina, lw * 0.75);
+    const pts = esq.concat(dir.reverse());
+    const forma = new Path2D();
+    forma.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+        forma.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+    }
+    forma.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    forma.closePath();
+    return { forma, espinha, W, lado: esq };
+}
+
+// Desenha um grupo de mechas: contorno único por trás → para cada mecha (de trás para a frente)
+// uma sombra levemente deslocada e a cor → um reflexo suave e curvo nas mechas maiores
+function desenharGrupoMechas(ctx, mechas, pal, lw) {
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = pal.contornoCrina; ctx.lineWidth = lw * 2;
+    for (const m of mechas) ctx.stroke(m.forma);
+    for (const m of mechas) {
+        ctx.save(); ctx.translate(0.7, 1.6);
+        ctx.fillStyle = m.sombra; ctx.fill(m.forma);
+        ctx.restore();
+        ctx.fillStyle = m.cor; ctx.fill(m.forma);
+    }
+    // reflexo: curva fina entre a borda e o meio da mecha, só no primeiro trecho
+    ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+    for (const m of mechas) {
+        if (m.W < 9) continue;
+        const e = m.espinha, b = m.lado, ini = 1, fim = Math.floor(e.length * 0.5);
+        ctx.lineWidth = m.W * 0.13;
+        ctx.beginPath();
+        for (let i = ini; i <= fim; i++) {
+            const x = e[i][0] * 0.55 + b[i][0] * 0.45, y = e[i][1] * 0.55 + b[i][1] * 0.45;
+            if (i === ini) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
     }
 }
 
-function desenharCauda(ctx, p, pal, lw, onda) {
-    for (let i = 0; i < 5; i++) {
-        const a = angulosEstado(CAUDA_BASE, p, i) * Math.PI / 180 + onda.A * 1.2 * Math.sin(onda.fase - 0.5 * i - 1.4);
-        // dobra positiva = cachinho para baixo; aumenta com a onda
-        const dobra = 0.7 + onda.B * 0.8 * Math.sin(onda.fase - 0.5 * i - 2.2);   // ponta em cachinho
-        desenharMecha(ctx, RAIZ_CAUDA[0], RAIZ_CAUDA[1], a, dobra, CAUDA_L[i], 10,
-            pal.crina[CAUDA_COR[i]], 'rgba(255,255,255,0.45)', pal.contornoCrina, lw * 0.75);
+// Ângulo de uma tabela de 5 entradas para N mechas (interpola)
+function anguloMecha(tabela, p, i, n) {
+    const f = i * 4 / Math.max(1, n - 1), j = Math.floor(f), k = Math.min(4, j + 1), t = f - j;
+    return angulosEstado(tabela, p, j) * (1 - t) + angulosEstado(tabela, p, k) * t;
+}
+
+const CRINA_L = [15, 19, 21, 18, 13], CRINA_W = [11, 12.5, 13, 11.5, 9], CRINA_COR = [1, 0, 2, 3, 0];
+const CRINA_VARIA = [-4, 5, -3, 4, -2];   // pequena variação de ângulo por mecha (graus): nada fica paralelo
+const CAUDA_L = [25, 31, 28, 21], CAUDA_W = [11.5, 13.5, 12, 9], CAUDA_COR = [0, 2, 3, 1];
+
+function desenharCrina(ctx, p, pal, lw, onda, angPescoco, fundo) {
+    const mechas = [];
+    if (fundo) {
+        // 2 mechas escuras atrás do pescoço: dão volume à crina
+        for (let i = 0; i < 2; i++) {
+            const t = 0.3 + i * 0.45;
+            const rx = 3 + (-5 - 3) * t, ry = -14.5 + (-2 + 14.5) * t;
+            const a = (anguloMecha(CRINA_BASE, p, i * 2 + 1, 5) + 12) * Math.PI / 180 - angPescoco
+                + onda.A * Math.sin(onda.fase - 0.6 * i - 0.3);
+            const m = caminhoMecha(rx, ry, a, 1.4 + onda.B * Math.sin(onda.fase - 0.6 * i - 1.1), 19, 12);
+            m.cor = pal.crinaFundo[i]; m.sombra = pal.crinaSombra[3];
+            mechas.push(m);
+        }
+        desenharGrupoMechas(ctx, mechas, pal, lw);
+        return;
     }
+    // 5 mechas largas ao longo da crista do pescoço; as de trás primeiro. A ponta enrola para dentro.
+    for (let i = 4; i >= 0; i--) {
+        const t = i / 4;
+        const rx = 3.5 + (-5.5 - 3.5) * t, ry = -15 + (-1.5 + 15) * t;
+        const a = (anguloMecha(CRINA_BASE, p, i, 5) + CRINA_VARIA[i]) * Math.PI / 180 - angPescoco
+            + onda.A * Math.sin(onda.fase - 0.6 * i);
+        const cacho = -(1.6 + 0.15 * i) + onda.B * 1.2 * Math.sin(onda.fase - 0.6 * i - 0.8);
+        const m = caminhoMecha(rx, ry, a, cacho, CRINA_L[i], CRINA_W[i]);
+        m.cor = pal.crina[CRINA_COR[i]]; m.sombra = pal.crinaSombra[CRINA_COR[i]];
+        mechas.push(m);
+    }
+    desenharGrupoMechas(ctx, mechas, pal, lw);
+}
+
+function desenharCauda(ctx, p, pal, lw, onda) {
+    const mechas = [];
+    for (let i = 0; i < 4; i++) {
+        const a = (anguloMecha(CAUDA_BASE, p, i, 4) + CRINA_VARIA[i]) * Math.PI / 180
+            + onda.A * 1.2 * Math.sin(onda.fase - 0.5 * i - 1.4);
+        // ponta em cacho, enrolando para cima, balançando com a onda
+        const cacho = 1.6 + 0.2 * i + onda.B * 1.4 * Math.sin(onda.fase - 0.5 * i - 2.2);
+        const m = caminhoMecha(RAIZ_CAUDA[0] + 1, RAIZ_CAUDA[1] + 1, a, cacho, CAUDA_L[i], CAUDA_W[i]);
+        m.cor = pal.crina[CAUDA_COR[i]]; m.sombra = pal.crinaSombra[CAUDA_COR[i]];
+        mechas.push(m);
+    }
+    desenharGrupoMechas(ctx, mechas, pal, lw);
+}
+
+// Topete: 3 mechas no alto da cabeça (uma caindo para a frente sobre a testa, sem cobrir o olho)
+function desenharTopete(ctx, pal, lw, onda) {
+    const def = [[-155, 1.6, 11, 8, 1], [-128, 1.4, 10, 7.5, 0], [-58, -1.5, 9, 7, 2]];
+    const mechas = def.map(([ang, cacho, L, W, cor], i) => {
+        const a = ang * Math.PI / 180 + onda.A * 0.5 * Math.sin(onda.fase - i);
+        const m = caminhoMecha(1.5 - i * 1.5, -10.5, a, cacho, L, W);
+        m.cor = pal.crina[cor]; m.sombra = pal.crinaSombra[cor];
+        return m;
+    });
+    desenharGrupoMechas(ctx, mechas, pal, lw);
 }
 
 // ─── Galope de 4 tempos (B3) ───
@@ -1020,7 +1121,13 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     ctx.stroke(formaCabeca);
     preencherSombreado(ctx, formaCabeca, pal.corpo, pal.sombra);
     ctx.save(); ctx.clip(formaCabeca);
-    ctx.fillStyle = pal.focinho; ctx.fill(formaFocinho);
+    // tom do focinho em degradê suave (sem borda dura: não denuncia uma "segunda forma" na cabeça)
+    const [fx, fy, fr] = CENTRO_FOCINHO[esp.cabeca] || CENTRO_FOCINHO.cabeca;
+    const corF = paraRGBA(pal.focinho);
+    const gradF = ctx.createRadialGradient(fx, fy, fr * 0.2, fx, fy, fr);
+    gradF.addColorStop(0, `rgba(${corF.r},${corF.g},${corF.b},1)`);
+    gradF.addColorStop(1, `rgba(${corF.r},${corF.g},${corF.b},0)`);
+    ctx.fillStyle = gradF; ctx.fill(formaCabeca);
     ctx.fillStyle = pal.claro; ctx.beginPath(); ctx.arc(0, -8, 2.8, 0, Math.PI * 2); ctx.fill();
     ctx.translate(0.6, 0.8); ctx.strokeStyle = pal.claro; ctx.lineWidth = 1; ctx.globalAlpha *= 0.8;
     ctx.stroke(formaCabeca);   // luz de borda da cabeça
@@ -1032,13 +1139,7 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     desenharOlho(ctx, p, pal, lwCab, dano, humor);
 
     // topete (só unicórnio): 3 mechas — duas para trás e uma caindo para a frente (sem cobrir o olho)
-    if (esp.topete) {
-        const topete = [[-150, 0.5, 11, 6, 1], [-128, 0.5, 10, 5.5, 0], [-62, -0.5, 8, 5, 2]];
-        topete.forEach(([ang, dobra, L, W, cor], i) => {
-            const a = ang * Math.PI / 180 + ondaCrina.A * 0.5 * Math.sin(ondaCrina.fase - i);
-            desenharMecha(ctx, 1.5 - i * 1.5, -10, a, dobra, L, W, pal.crina[cor], 'rgba(255,255,255,0.45)', pal.contornoCrina, lwMecha);
-        });
-    }
+    if (esp.topete) desenharTopete(ctx, pal, lwMecha, ondaCrina);
 
     // orelha da frente
     desenharOrelhaEspecie(ctx, pal, lwCab, esp, angOrelha, ondaCrina, false);
