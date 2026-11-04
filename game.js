@@ -538,10 +538,6 @@ const MODS_FASE = {
 // ⚙️  CONFIGURE AQUI após criar seu projeto Firebase:
 const FIREBASE_URL = 'https://unicornparkour-8f6a2-default-rtdb.firebaseio.com/';
 
-// 🔑 Senha de admin criptografada (SHA-256 de "unicorn2024")
-// Para trocar: gere o hash em https://emn178.github.io/online-tools/sha256.html
-const ADMIN_PASSWORD_HASH = '26af5e5ee7c44cc8968b492f8b5bb861a8758d8653ce82ecf790a5f896c004d1';
-
 // Detecta modo admin via URL (?admin=1)
 const _urlParams = new URLSearchParams(window.location.search);
 const isAdminMode = _urlParams.has('admin');
@@ -549,11 +545,16 @@ const isAdminMode = _urlParams.has('admin');
 let leaderboard = [];
 let _firebaseAvailable = (FIREBASE_URL && FIREBASE_URL !== 'COLE_SUA_URL_AQUI');
 
-// SHA-256 via Web Crypto API (built-in no browser)
-async function sha256(message) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+// Endereço do placar no Firebase (sem barra dupla)
+const URL_PLACAR = FIREBASE_URL.replace(/\/+$/, '') + '/leaderboard.json';
+
+// Converte a resposta do Firebase ({id: recorde, ...}) no top 10 ordenado, ignorando entradas inválidas
+function topDezDe(data) {
+    if (!data || typeof data !== 'object' || data.error) return [];
+    return Object.values(data)
+        .filter(e => e && typeof e.score === 'number' && e.name)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
 }
 
 async function loadLeaderboard() {
@@ -562,16 +563,11 @@ async function loadLeaderboard() {
 
     if (_firebaseAvailable) {
         try {
-            const res = await fetch(`${FIREBASE_URL}/leaderboard.json`);
-            const data = await res.json();
-            if (data && typeof data === 'object') {
-                leaderboard = Object.values(data)
-                    .filter(e => e && typeof e.score === 'number' && e.name)
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, 10);
-            } else {
-                leaderboard = [];
-            }
+            // Baixa só o top 10 (precisa do ".indexOn": "score" das regras em database.rules.json).
+            // Se as regras ainda não foram publicadas, o Firebase recusa e baixamos a lista inteira.
+            let res = await fetch(`${URL_PLACAR}?orderBy=${encodeURIComponent('"score"')}&limitToLast=10`);
+            if (!res.ok) res = await fetch(URL_PLACAR);
+            leaderboard = topDezDe(await res.json());
             return leaderboard;
         } catch (err) {
             console.warn('Firebase indisponível, usando localStorage:', err);
@@ -583,18 +579,22 @@ async function loadLeaderboard() {
     return leaderboard;
 }
 
+// Salva um recorde. As regras do Firebase só permitem CRIAR recordes válidos (nunca editar nem apagar),
+// por isso o jogo não tenta mais "podar" a lista nem zerar o placar.
 async function addScoreOnline(entry) {
     if (_firebaseAvailable) {
         try {
-            await fetch(`${FIREBASE_URL}/leaderboard.json`, {
+            const res = await fetch(URL_PLACAR, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...entry, ts: Date.now() })
             });
-            // Prune: manter só os top 100 no Firebase para economizar espaço
-            await _pruneFirebase();
-            await loadLeaderboard();
-            return;
+            if (res.ok) {
+                await loadLeaderboard();
+                return;
+            }
+            console.warn('Firebase recusou o recorde:', res.status);
+            showToast('Não foi possível salvar no placar global agora.');
         } catch (err) {
             console.warn('Erro ao salvar no Firebase:', err);
         }
@@ -604,33 +604,6 @@ async function addScoreOnline(entry) {
     leaderboard.sort((a, b) => b.score - a.score);
     leaderboard = leaderboard.slice(0, 10);
     localStorage.setItem('unicornLeaderboard', JSON.stringify(leaderboard));
-}
-
-async function _pruneFirebase() {
-    try {
-        const res = await fetch(`${FIREBASE_URL}/leaderboard.json`);
-        const data = await res.json();
-        if (!data) return;
-        const entries = Object.entries(data)
-            .map(([key, val]) => ({ key, ...val }))
-            .sort((a, b) => b.score - a.score);
-        const toDelete = entries.slice(100); // mantém top 100
-        await Promise.all(toDelete.map(e =>
-            fetch(`${FIREBASE_URL}/leaderboard/${e.key}.json`, { method: 'DELETE' })
-        ));
-    } catch { }
-}
-
-async function clearLeaderboardOnline() {
-    if (_firebaseAvailable) {
-        try {
-            await fetch(`${FIREBASE_URL}/leaderboard.json`, { method: 'DELETE' });
-        } catch (err) {
-            console.warn('Erro ao limpar Firebase:', err);
-        }
-    }
-    leaderboard = [];
-    localStorage.removeItem('unicornLeaderboard');
 }
 
 function renderLeaderboard() {
@@ -708,19 +681,11 @@ btnLeadBack.onclick = () => {
     mainMenu.classList.remove('hidden');
 };
 
-btnClearLeaderboard.onclick = async () => {
-    const pwd = prompt('🔑 Senha de administrador:');
-    if (!pwd) return;
-    const hash = await sha256(pwd);
-    if (hash === ADMIN_PASSWORD_HASH) {
-        if (confirm('⚠️ Apagar TODOS os recordes globais permanentemente?')) {
-            await clearLeaderboardOnline();
-            renderLeaderboard();
-            showToast('Placar zerado com sucesso!');
-        }
-    } else {
-        alert('❌ Senha incorreta!');
-    }
+// Zerar o placar global não é mais possível pelo jogo: as regras do Firebase (database.rules.json)
+// bloqueiam apagar, justamente para ninguém conseguir apagar pela URL. O dono zera pelo console.
+btnClearLeaderboard.onclick = () => {
+    alert('Para zerar o placar global: Firebase Console → Realtime Database → Dados → '
+        + 'passe o mouse em "leaderboard" e clique no X (excluir).');
 };
 
 btnMute.onclick = () => {
