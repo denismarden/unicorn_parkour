@@ -18,7 +18,8 @@ const PALETA_PADRAO = {
     chifre: { base: '#FFC94A', sombra: '#E0962B', brilho: '#FFF4C2', contorno: '#9A5A12' },
     casco: { base: '#8A4F7D', sombra: '#5E3158', brilho: '#C08AB4' },
     focinho: '#FFD9EA', narina: '#C77AA0', orelhaDentro: '#FFB3D1', bochecha: 'rgba(255,143,184,0.55)',
-    iris: ['#4FB6FF', '#1D5FC9'], olhoCiborgue: false
+    iris: ['#4FB6FF', '#1D5FC9'], olhoCiborgue: false,
+    contornoInterno: '#93709F'
 };
 const CHIFRE_PEROLA = { base: '#FFF8E1', sombra: '#E8C98A', brilho: '#FFFFFF', contorno: '#9A6A1A' };
 const IRIS_ESPECIAL = {
@@ -58,10 +59,12 @@ function paletaDe(c) {
     let crina = [m0, misturar(m0, _BRANCO, 0.35), misturar(m0, m1, 0.5), m1];
     // crina sem contraste com o corpo (ex.: Ninja): clareia
     if (contraste(crina[0], b) < 1.6) crina = crina.map(t => misturar(t, _BRANCO, 0.35));
+    // corpo escuro: levanta um pouco a cor base e usa a cor original como sombra, senão o volume some
+    const base = escuro ? misturar(b, _BRANCO, 0.14) : b;
     const p = {
         alfa: b.a,                                         // Fantasma é translúcido
-        corpo: paraHex(b), claro: paraHex(misturar(b, _BRANCO, 0.35)),
-        sombra: paraHex(misturar(b, _ROXO_SOMBRA, 0.30)),  // sombra puxada para o roxo, não só mais escura
+        corpo: paraHex(base), claro: paraHex(misturar(b, _BRANCO, escuro ? 0.5 : 0.35)),
+        sombra: escuro ? paraHex(b) : paraHex(misturar(b, _ROXO_SOMBRA, 0.30)),  // sombra puxada para o roxo, não só mais escura
         fundo: paraHex(misturar(b, _ROXO_SOMBRA, 0.45)),
         contorno: escuro ? paraHex(misturar(m0, _BRANCO, 0.40))   // corpo escuro: contorno CLARO
             : paraHex(misturar(b, _ROXO_CONT, 0.78)),
@@ -78,7 +81,9 @@ function paletaDe(c) {
         olhoCiborgue: c.id === 9,
         pupila: c.id === 20 ? 'fenda' : 'redonda'
     };
-    if (c.id === 20) p.chifre = CHIFRE_OSSO;
+    if (c.id === 20) { p.chifre = CHIFRE_OSSO; p.ventre = '#FFD27A'; }   // dragão: barriga clara (contraste clássico)
+    // linhas internas (divisões dentro da silhueta) mais suaves que o contorno externo
+    p.contornoInterno = paraHex(misturar(paraRGBA(p.sombra), paraRGBA(p.contorno), 0.5));
     cachePaletas.set(c.id, p);
     return p;
 }
@@ -142,23 +147,33 @@ const FORMAS = (() => {
     return { tronco, pescoco, cabeca, focinho, orelha, orelhaDentro, chifre, chifreSombra, olho, iris };
 })();
 
-const PIVO_PESCOCO = [12, -11];
+// Proporção "chibi": tronco 13% mais curto (os pivôs acompanham) e cabeça maior (escalaCabeca em ESPECIES)
+const ESCALA_TRONCO_X = 0.87;
+const PIVO_PESCOCO = [10.5, -11];
 const NUCA_NO_PESCOCO = [3, -14];
 const INCLINACAO_PESCOCO = 24;        // graus para a frente (pescoço arqueado, não vertical)
 const INCLINACAO_CABECA = 8;          // graus: focinho levemente para baixo
-const ESCALA_CABECA = 1.15;           // cabeça um pouco maior (estilo fofo)
 const PIVO_ORELHA = [-1, -10];
-const PIVO_PATA_TRAS = [-12, -4];
-const PIVO_PATA_FRENTE = [11, -4];
-const RAIZ_CAUDA = [-18, -11];
-const PIVO_ASA = [6, -14];            // cernelha
+const PIVO_PATA_TRAS = [-10.5, -4];
+const PIVO_PATA_FRENTE = [9.5, -4];
+const RAIZ_CAUDA = [-15.5, -11];
+const PIVO_ASA = [5, -14];            // cernelha
 
 // ─── Espécies: o mesmo rig (corpo, patas, galope, poses) com cabeça, orelhas, cauda e pés próprios ───
+// Corpo e andar também variam: coxa/canela (comprimento das patas), cadência e defasagem do galope,
+// inclinação do tronco, troncoY (achatado/alto), flexão da coluna (gato) e salto (coelho)
+const OFFSET_CAVALO = { tb: 0.00, tf: 0.12, db: 0.30, df: 0.42 };
 const ESPECIES = {
-    unicornio: { cabeca: 'cabeca', focinho: 'focinho', escalaCabeca: 1.15, pescoco: 1, orelha: 'folha', chifre: 'unicornio', crina: true, topete: true, cauda: 'mechas', pe: 'casco', bigodes: false, nariz: 'narina', boca: 'cavalo', asas: 'penas' },
-    dragao: { cabeca: 'cabecaDragao', focinho: 'focinhoDragao', escalaCabeca: 1.1, pescoco: 1.05, orelha: 'barbatana', chifre: 'dragao', crina: false, espinhos: true, cauda: 'reptil', pe: 'garra', bigodes: false, nariz: 'dragao', boca: 'dragao', asas: 'morcego' },
-    gato: { cabeca: 'cabecaGato', focinho: 'focinhoGato', escalaCabeca: 1.25, pescoco: 0.72, orelha: 'gato', chifre: null, crina: false, cauda: 'gato', pe: 'pata', bigodes: true, nariz: 'gato', boca: 'gato', asas: 'penas' },
-    coelho: { cabeca: 'cabecaCoelho', focinho: 'focinhoGato', escalaCabeca: 1.25, pescoco: 0.72, orelha: 'coelho', chifre: null, crina: false, cauda: 'pompom', pe: 'pata', bigodes: true, nariz: 'coelho', boca: 'coelho', asas: 'penas' }
+    unicornio: { cabeca: 'cabeca', focinho: 'focinho', escalaCabeca: 1.4, pescoco: 1, orelha: 'folha', chifre: 'unicornio', crina: true, topete: true, cauda: 'mechas', pe: 'casco', bigodes: false, nariz: 'narina', boca: 'cavalo', asas: 'penas',
+        coxa: 9, canela: 7.5, cadencia: 1, offsets: OFFSET_CAVALO, inclinacao: 3.5, troncoY: 1, flexao: 0, salto: 0 },
+    dragao: { cabeca: 'cabecaDragao', focinho: 'focinhoDragao', escalaCabeca: 1.3, pescoco: 1.05, orelha: 'barbatana', chifre: 'dragao', crina: false, espinhos: true, cauda: 'reptil', pe: 'garra', bigodes: false, nariz: 'dragao', boca: 'dragao', asas: 'morcego',
+        coxa: 8.5, canela: 7, cadencia: 0.85, offsets: OFFSET_CAVALO, inclinacao: 2, troncoY: 1.05, flexao: 0, salto: 0, ventre: true },
+    // gato: corpo longo e baixo, patas curtas, galope com a coluna esticando e encolhendo
+    gato: { cabeca: 'cabecaGato', focinho: 'focinhoGato', escalaCabeca: 1.5, pescoco: 0.72, orelha: 'gato', chifre: null, crina: false, cauda: 'gato', pe: 'pata', bigodes: true, nariz: 'gato', boca: 'gato', asas: 'penas',
+        coxa: 6.5, canela: 5.5, cadencia: 1.1, offsets: { tb: 0.00, tf: 0.08, db: 0.45, df: 0.53 }, inclinacao: 6, troncoY: 0.85, flexao: 0.07, salto: 0 },
+    // coelho: patas traseiras juntas, dianteiras juntas, com pulinho
+    coelho: { cabeca: 'cabecaCoelho', focinho: 'focinhoGato', escalaCabeca: 1.5, pescoco: 0.72, orelha: 'coelho', chifre: null, crina: false, cauda: 'pompom', pe: 'pata', bigodes: true, nariz: 'coelho', boca: 'coelho', asas: 'penas',
+        coxa: 7, canela: 5.5, cadencia: 0.9, offsets: { tb: 0.00, tf: 0.03, db: 0.50, df: 0.55 }, inclinacao: 5, troncoY: 1.05, flexao: 0, salto: 5 }
 };
 function especieDe(c) {
     return c.id === 20 ? ESPECIES.dragao : c.id === 21 ? ESPECIES.gato : c.id === 22 ? ESPECIES.coelho : ESPECIES.unicornio;
@@ -178,7 +193,7 @@ const CHIFRE_OSSO = { base: '#F5E6C8', sombra: '#C9B48A', brilho: '#FFFFFF', con
     FORMAS.orelhaCoelho = novo(p => p.ellipse(0, -10, 3.4, 11, 0, 0, Math.PI * 2));
     FORMAS.orelhaCoelhoDentro = novo(p => p.ellipse(0.3, -10, 1.6, 8, 0, 0, Math.PI * 2));
     FORMAS.barbatana = novo(p => { p.moveTo(-3, 0); p.lineTo(-7, -8); p.lineTo(-3.5, -6); p.lineTo(-4.5, -12); p.lineTo(0.5, -5); p.lineTo(3, 0); p.closePath(); });
-    FORMAS.chifreDragao = novo(p => { p.moveTo(-1.5, -8.5); p.quadraticCurveTo(-4, -14, -9.5, -17.5); p.quadraticCurveTo(-4, -12.5, 1.8, -9.6); p.closePath(); });
+    FORMAS.chifreDragao = novo(p => { p.moveTo(-2.2, -8.4); p.quadraticCurveTo(-3.6, -12.6, -7.2, -14.6); p.quadraticCurveTo(-2.6, -11.6, 2.4, -9.6); p.closePath(); });   // curto e grosso
     FORMAS.asaMorcego = novo(p => {
         p.moveTo(0, 0); p.lineTo(-3, -16); p.lineTo(-10, -12); p.lineTo(-15, -20); p.lineTo(-19, -11);
         p.lineTo(-26, -14); p.quadraticCurveTo(-18, -4, 0, 2); p.closePath();
@@ -226,23 +241,40 @@ function desenharMecha(ctx, x, y, a, dobra, L, W, cor, corBrilho, contorno, lw) 
     ctx.stroke();
 }
 
-// Pata em 2 segmentos (cápsulas) + casco. Ângulos em graus a partir da vertical; positivo = casco para trás.
-function desenharPata(ctx, px, py, a1, a2, larg1, larg2, cor, pal, lw, pe = 'casco') {
+// Coxa em forma de gota: larga no quadril/ombro, afinando até o joelho
+function caminhoCoxa(px, py, kx, ky, w1, w2) {
+    const dx = kx - px, dy = ky - py, L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L, ny = dx / L, ang = Math.atan2(dy, dx);
+    const c = new Path2D();
+    c.moveTo(px + nx * w1 / 2, py + ny * w1 / 2);
+    c.lineTo(kx + nx * w2 / 2, ky + ny * w2 / 2);
+    c.arc(kx, ky, w2 / 2, ang + Math.PI / 2, ang - Math.PI / 2, true);
+    c.lineTo(px - nx * w1 / 2, py - ny * w1 / 2);
+    c.arc(px, py, w1 / 2, ang - Math.PI / 2, ang + Math.PI / 2, true);
+    c.closePath();
+    return c;
+}
+
+// Pata: coxa afunilada + canela + casco/pata. Ângulos em graus a partir da vertical (positivo = casco para trás).
+// modo: 'tudo' | 'contorno' (só a silhueta por trás) | 'preenchimento' (sem o contorno — para fundir com o corpo)
+function desenharPata(ctx, px, py, a1, a2, larg1, larg2, cor, pal, lw, pe = 'casco', coxa = 9, canela = 7.5, modo = 'tudo') {
     const r1 = a1 * Math.PI / 180, r2 = a2 * Math.PI / 180;
-    const kx = px - Math.sin(r1) * 9, ky = py + Math.cos(r1) * 9;          // joelho / jarrete
-    const tx = kx - Math.sin(r2) * 7.5, ty = ky + Math.cos(r2) * 7.5;      // fim da canela
+    const kx = px - Math.sin(r1) * coxa, ky = py + Math.cos(r1) * coxa;          // joelho / jarrete
+    const tx = kx - Math.sin(r2) * canela, ty = ky + Math.cos(r2) * canela;      // fim da canela
+    const formaCoxa = caminhoCoxa(px, py, kx, ky, larg1 * 1.6, larg2 * 1.15);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // contorno por trás
-    ctx.strokeStyle = pal.contorno;
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(kx, ky);
-    ctx.lineWidth = larg1 + lw * 2; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(tx, ty);
-    ctx.lineWidth = larg2 + lw * 2; ctx.stroke();
+    if (modo !== 'preenchimento') {
+        // contorno por trás (coxa + canela)
+        ctx.strokeStyle = pal.contorno;
+        ctx.lineWidth = lw * 2; ctx.stroke(formaCoxa);
+        ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(tx, ty);
+        ctx.lineWidth = larg2 + lw * 2; ctx.stroke();
+        if (modo === 'contorno') return;
+    }
     // preenchimento
+    ctx.fillStyle = cor; ctx.fill(formaCoxa);
     ctx.strokeStyle = cor;
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(kx, ky);
-    ctx.lineWidth = larg1; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(tx, ty);
     ctx.lineWidth = larg2; ctx.stroke();
     ctx.save();
@@ -250,7 +282,7 @@ function desenharPata(ctx, px, py, a1, a2, larg1, larg2, cor, pal, lw, pe = 'cas
     ctx.rotate(r2);
     if (pe !== 'casco') {
         // pata almofadada (gato, coelho) ou com garras (dragão)
-        ctx.beginPath(); ctx.ellipse(0.6, 0.5, 3.2, 2.4, 0, 0, Math.PI * 2);   // base em ~2,9u, igual ao casco
+        ctx.beginPath(); ctx.ellipse(0.6, 0.5, 3.6, 2.4, 0, 0, Math.PI * 2);   // base em ~2,9u, igual ao casco
         ctx.lineWidth = lw * 0.9; ctx.strokeStyle = pal.contorno; ctx.stroke();
         ctx.fillStyle = cor; ctx.fill();
         if (pe === 'garra') {
@@ -265,17 +297,18 @@ function desenharPata(ctx, px, py, a1, a2, larg1, larg2, cor, pal, lw, pe = 'cas
         ctx.restore();
         return;
     }
-    // casco (trapézio alinhado com a canela)
+    // casco maior (trapézio alinhado com a canela) — a corrida "pisa" visivelmente
     ctx.beginPath();
-    ctx.moveTo(-1.8, -0.4); ctx.lineTo(1.8, -0.4); ctx.lineTo(2.5, 2.8); ctx.lineTo(-2.5, 2.8);
+    ctx.moveTo(-2.3, -0.4); ctx.lineTo(2.3, -0.4); ctx.lineTo(3.2, 2.8); ctx.lineTo(-3.2, 2.8);
     ctx.closePath();
     ctx.lineWidth = lw * 0.9; ctx.strokeStyle = pal.contorno; ctx.stroke();
     ctx.fillStyle = pal.casco.base; ctx.fill();
-    ctx.fillStyle = pal.casco.brilho; ctx.fillRect(-1.6, 0.2, 1.1, 1.6);
+    ctx.fillStyle = pal.casco.brilho; ctx.fillRect(-2, 0.2, 1.3, 1.6);
     ctx.restore();
 }
 
-function desenharOlho(ctx, p, pal, lw, dano) {
+// humor: 'correndo' | 'subindo' | 'caindo' | 'feliz' (pouso) | 'determinado' (dash)
+function desenharOlho(ctx, p, pal, lw, dano, humor = 'correndo') {
     if (dano && dano.olhosFechados && !p.assustado) {
         // olhos apertados "> <" no instante do dano
         ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.75; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -290,8 +323,22 @@ function desenharOlho(ctx, p, pal, lw, dano) {
         ctx.stroke();
         return;
     }
-    // Piscar animado: a pálpebra desce e sobe (p.piscar vai de 0 a -8 passos)
-    const fecha = p.piscar < 0 && p.piscar >= -8 ? 1 - Math.abs(p.piscar + 4) / 4 : 0;
+    if (humor === 'feliz') {
+        // pouso: olhinho fechado de alegria "^"
+        ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(1.8, -2); ctx.quadraticCurveTo(5, -6.6, 8.4, -2.4); ctx.stroke();
+        return;
+    }
+    if (humor === 'determinado') {
+        // sobrancelha decidida
+        ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(2.2, -9.6); ctx.lineTo(8.6, -8.2); ctx.stroke();
+    }
+    // Piscar animado: a pálpebra desce e sobe (p.piscar vai de 0 a -8 passos); no dash o olho fica semicerrado
+    let fecha = p.piscar < 0 && p.piscar >= -8 ? 1 - Math.abs(p.piscar + 4) / 4 : 0;
+    if (humor === 'determinado') fecha = Math.max(fecha, 0.42);
+    // para onde a pupila olha: para a frente correndo, para cima subindo, para baixo caindo
+    const olharX = humor === 'caindo' ? 0.2 : 0.6, olharY = humor === 'caindo' ? 0.9 : (humor === 'subindo' ? -0.6 : 0);
     if (fecha > 0.85) {
         ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.75; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(1.6, -2.4); ctx.quadraticCurveTo(5, 0.6, 8.6, -2.6); ctx.stroke();
@@ -306,6 +353,7 @@ function desenharOlho(ctx, p, pal, lw, dano) {
         ctx.fillStyle = '#B00018'; ctx.fill(FORMAS.iris);
         ctx.fillStyle = '#FF3B3B'; ctx.beginPath(); ctx.arc(5.7, -2.6, 1.6, 0, Math.PI * 2); ctx.fill();
     } else {
+        ctx.translate(olharX, olharY);
         // íris em 2 tons chapados (escura em cima, clara embaixo)
         ctx.fillStyle = pal.iris[0]; ctx.fill(FORMAS.iris);
         ctx.save(); ctx.clip(FORMAS.iris);
@@ -316,6 +364,7 @@ function desenharOlho(ctx, p, pal, lw, dano) {
         if (pal.pupila === 'fenda') ctx.ellipse(5.9, -2.7, 0.7, 2.7, -0.1, 0, Math.PI * 2);   // olho de réptil
         else ctx.ellipse(5.9, -2.7, 1.6, 2.2, -0.1, 0, Math.PI * 2);
         ctx.fill();
+        ctx.translate(-olharX, -olharY);
     }
     // brilhos
     ctx.fillStyle = '#FFFFFF';
@@ -347,19 +396,20 @@ function desenharOlho(ctx, p, pal, lw, dano) {
 }
 
 // Nariz, boca e bigodes de cada espécie (coordenadas da cabeça)
-function desenharRostoEspecie(ctx, p, pal, lw, esp) {
+function desenharRostoEspecie(ctx, p, pal, lw, esp, humor = 'correndo') {
+    const bocaO = p.assustado || humor === 'caindo';   // boca em "o" de susto ou de queda
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (esp.nariz === 'narina') {
         ctx.fillStyle = pal.narina;
         ctx.beginPath(); ctx.ellipse(16, 0, 1.2, 0.8, 0.3, 0, Math.PI * 2); ctx.fill();
-        desenharBoca(ctx, p, pal, lw);
+        desenharBoca(ctx, p, pal, lw, humor);
         return;
     }
     if (esp.nariz === 'dragao') {
         ctx.fillStyle = pal.narina;
         ctx.beginPath(); ctx.ellipse(19.6, -0.6, 1.1, 0.7, 0.3, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.55;
-        if (p.assustado) {
+        if (bocaO) {
             ctx.fillStyle = '#5A1A3A';
             ctx.beginPath(); ctx.ellipse(16, 4, 1.8, 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         } else {
@@ -378,7 +428,7 @@ function desenharRostoEspecie(ctx, p, pal, lw, esp) {
     else ctx.ellipse(14.7, 0.8, 1.5, 1.1, 0, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
     ctx.lineWidth = lw * 0.5;
-    if (p.assustado) {
+    if (bocaO) {
         ctx.fillStyle = '#5A1A3A';
         ctx.beginPath(); ctx.ellipse(14.6, 4, 1.3, 1.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     } else {
@@ -410,9 +460,10 @@ function rgbaContorno(pal, a) {
     return `rgba(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)},${a})`;
 }
 
-function desenharBoca(ctx, p, pal, lw) {
+function desenharBoca(ctx, p, pal, lw, humor = 'correndo') {
+    const bocaO = p.assustado || humor === 'caindo';
     ctx.strokeStyle = pal.contorno; ctx.lineCap = 'round'; ctx.lineWidth = lw * 0.55;
-    if (p.assustado) {
+    if (bocaO) {
         ctx.fillStyle = '#5A1A3A';
         ctx.beginPath(); ctx.ellipse(14.6, 4.6, 1.6, 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     } else if (estaSorrindo(p)) {
@@ -436,8 +487,8 @@ const CAUDA_BASE = {
     subindo: [158, 163, 168, 173, 178],
     caindo: [205, 212, 220, 228, 236]
 };
-const CRINA_L = [13, 16, 17, 14, 10], CRINA_W = [6, 6.5, 6, 5.5, 5], CRINA_COR = [0, 1, 2, 3, 1];
-const CAUDA_L = [16, 21, 24, 21, 15], CAUDA_COR = [1, 0, 2, 3, 2];
+const CRINA_L = [16, 20, 21, 17, 12], CRINA_W = [9, 10, 9, 8, 7], CRINA_COR = [0, 1, 2, 3, 1];   // crina cheia (lê bem a ~65 px)
+const CAUDA_L = [17, 22, 25, 22, 16], CAUDA_COR = [1, 0, 2, 3, 2];
 
 // Mistura os ângulos dos 3 estados conforme o quanto está no ar (mistura) e a velocidade vertical
 function angulosEstado(tabela, p, i) {
@@ -491,21 +542,20 @@ function desenharCauda(ctx, p, pal, lw, onda) {
     for (let i = 0; i < 5; i++) {
         const a = angulosEstado(CAUDA_BASE, p, i) * Math.PI / 180 + onda.A * 1.2 * Math.sin(onda.fase - 0.5 * i - 1.4);
         // dobra positiva = cachinho para baixo; aumenta com a onda
-        const dobra = 0.4 + onda.B * 0.8 * Math.sin(onda.fase - 0.5 * i - 2.2);
-        desenharMecha(ctx, RAIZ_CAUDA[0], RAIZ_CAUDA[1], a, dobra, CAUDA_L[i], 7.5,
+        const dobra = 0.7 + onda.B * 0.8 * Math.sin(onda.fase - 0.5 * i - 2.2);   // ponta em cachinho
+        desenharMecha(ctx, RAIZ_CAUDA[0], RAIZ_CAUDA[1], a, dobra, CAUDA_L[i], 10,
             pal.crina[CAUDA_COR[i]], 'rgba(255,255,255,0.45)', pal.contornoCrina, lw * 0.75);
     }
 }
 
 // ─── Galope de 4 tempos (B3) ───
-const FATOR_FASE_GALOPE = 0.067;      // runPhase → fase do galope (0..1); ~0,45 s por ciclo na velocidade 5
+const FATOR_FASE_GALOPE = 0.085;      // runPhase → fase do galope (0..1); cadência um pouco maior (menos "patinação")
 const CHAO = 15.4;                    // linha dos cascos em unidades locais ((h/2)/1,3)
-// Defasagem de cada pata no ciclo (galope transverso): traseira fundo, traseira frente, dianteira fundo, dianteira frente
-const OFFSET_GALOPE = { tb: 0.00, tf: 0.12, db: 0.30, df: 0.42 };
+// Defasagem de cada pata no ciclo fica em ESPECIES[...].offsets (cavalo = galope transverso)
 // Keyframes [u, coxa, canela] — ângulos absolutos a partir da vertical (positivo = casco para trás)
-// u 0–0,4: apoio no chão (casco plantado) · 0,4–1: pata no ar
-const KF_DIANTEIRA = [[0, -25, -20], [0.2, 0, 0], [0.4, 30, 20], [0.6, 10, 95], [0.8, -35, 30], [1, -25, -20]];
-const KF_TRASEIRA = [[0, -20, -10], [0.2, 5, -5], [0.4, 40, 25], [0.6, -15, 50], [0.8, -35, 5], [1, -20, -10]];
+// u 0–0,4: apoio no chão (casco plantado, passada longa) · 0,4–1: pata no ar
+const KF_DIANTEIRA = [[0, -36, -28], [0.2, 0, 0], [0.4, 40, 26], [0.6, 12, 95], [0.8, -42, 30], [1, -36, -28]];
+const KF_TRASEIRA = [[0, -30, -16], [0.2, 5, -5], [0.4, 48, 30], [0.6, -15, 50], [0.8, -40, 5], [1, -30, -16]];
 
 function amostrarKF(kf, u) {
     for (let i = 0; i < kf.length - 1; i++) {
@@ -521,8 +571,9 @@ function amostrarKF(kf, u) {
 
 const _lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
-// Pose de cada pata no ar (subindo / ápice / caindo / voo / dash / slam / mortal)
+// Pose de cada pata no ar (subindo / ápice / caindo / voo / dash / slam / mortal / morte)
 function poseArPata(p, dianteira, tempo) {
+    if (p.assustado) return dianteira ? [-65, -35] : [60, 35];                                     // morte: patas abertas
     if (typeof isDashing !== 'undefined' && isDashing) return dianteira ? [-75, -60] : [70, 60];   // "super-herói"
     if (typeof isSlamming !== 'undefined' && isSlamming) return dianteira ? [5, 0] : [-5, 0];      // patas retas para baixo
     if (typeof isFlying !== 'undefined' && isFlying) {
@@ -540,11 +591,11 @@ function poseArPata(p, dianteira, tempo) {
     return pose;
 }
 
-// Ângulos finais das 4 patas: galope no chão misturado com a pose aérea
-function calcularPatas(p, tempo, kPouso) {
-    const fase = ((p.runPhase * FATOR_FASE_GALOPE) % 1 + 1) % 1;
+// Ângulos finais das 4 patas: galope (da espécie) no chão misturado com a pose aérea
+function calcularPatas(p, tempo, kPouso, esp = ESPECIES.unicornio) {
+    const fase = ((p.runPhase * FATOR_FASE_GALOPE * esp.cadencia) % 1 + 1) % 1;
     const res = {};
-    for (const [nome, off] of Object.entries(OFFSET_GALOPE)) {
+    for (const [nome, off] of Object.entries(esp.offsets)) {
         const dianteira = nome[0] === 'd';
         const u = (fase - off + 1) % 1;
         let chao = amostrarKF(dianteira ? KF_DIANTEIRA : KF_TRASEIRA, u);
@@ -558,10 +609,10 @@ function calcularPatas(p, tempo, kPouso) {
     return res;
 }
 
-// Altura do casco (em u) para uma pata com pivô em pivoY
-function alturaCasco(pivoY, ang) {
+// Altura do casco (em u) para uma pata com pivô em pivoY (casco/pata tem ~2,8u)
+function alturaCasco(pivoY, ang, coxa = 9, canela = 7.5) {
     const r1 = ang[0] * Math.PI / 180, r2 = ang[1] * Math.PI / 180;
-    return pivoY + Math.cos(r1) * 9 + Math.cos(r2) * 10.3;
+    return pivoY + Math.cos(r1) * coxa + Math.cos(r2) * (canela + 2.8);
 }
 
 // Estado de dano: recuo, flash branco e pisca
@@ -580,6 +631,205 @@ function estadoDano(p) {
     };
 }
 
+// ─── Acessórios: cada personagem ganha um detalhe próprio (não é só troca de cor) ───
+// onde: 'antes' (atrás do tronco), 'tras' (por cima das costas), 'corpo' (marcas no corpo),
+//       'cabeca' (coordenadas da cabeça, antes do chifre), 'depois' (por cima de tudo)
+function _contornar(ctx, path, cor, contorno, lw) {
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = contorno; ctx.lineWidth = lw; ctx.stroke(path);
+    ctx.fillStyle = cor; ctx.fill(path);
+}
+function _estrela(cx, cy, r, pontas = 5) {
+    const c = new Path2D();
+    for (let i = 0; i < pontas * 2; i++) {
+        const rr = i % 2 === 0 ? r : r * 0.45, a = i * Math.PI / pontas - Math.PI / 2;
+        c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+    }
+    c.closePath();
+    return c;
+}
+const ACESS = {
+    marca: (cor) => (ctx, pal, lw) => _contornar(ctx, _estrela(-11, -4.5, 3.2), cor, pal.contornoInterno, lw * 0.55),
+    constelacao: (ctx, pal, lw) => {
+        ctx.strokeStyle = '#FFE08A'; ctx.lineWidth = 0.6;
+        ctx.beginPath(); ctx.moveTo(-13, -6); ctx.lineTo(-10, -2); ctx.lineTo(-7, -5.5); ctx.stroke();
+        for (const [x, y] of [[-13, -6], [-10, -2], [-7, -5.5]]) _contornar(ctx, _estrela(x, y, 1.6, 4), '#FFE08A', pal.contornoInterno, lw * 0.35);
+    },
+    manchas: (cor) => (ctx) => {
+        ctx.fillStyle = cor; ctx.globalAlpha *= 0.85;
+        for (const [x, y, r] of [[-12, -3, 2.6], [-4.5, -1, 1.8], [3.5, -6, 2.2], [-8, -9, 1.5]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+    },
+    painel: (ctx, pal, lw) => {
+        const c = new Path2D(); c.roundRect(-7, -7, 9, 6, 1.5);
+        _contornar(ctx, c, '#A9C4BE', pal.contorno, lw * 0.6);
+        ctx.fillStyle = '#3A4A48';
+        for (const [x, y] of [[-6, -6], [1, -6], [-6, -2], [1, -2]]) { ctx.beginPath(); ctx.arc(x, y, 0.55, 0, Math.PI * 2); ctx.fill(); }
+        ctx.fillStyle = '#00E5FF'; ctx.fillRect(-4, -5, 3, 1.2);
+    },
+    cristais: (ctx, pal, lw) => {
+        for (const [x, y, t] of [[-16, -11.5, 5], [-11.5, -13.5, 7], [-7, -14, 5]]) {   // na garupa (a crina cobre o meio das costas)
+            const c = new Path2D(); c.moveTo(x - 2.4, y + 2); c.lineTo(x, y - t); c.lineTo(x + 2.4, y + 2); c.closePath();
+            _contornar(ctx, c, '#CFF4FF', '#2A3A7A', lw * 1.3);
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 0.6;
+            ctx.beginPath(); ctx.moveTo(x - 0.6, y - t + 2); ctx.lineTo(x - 1.4, y + 1); ctx.stroke();
+        }
+    },
+    capa: (cor, borda) => (ctx, pal, lw, onda) => {
+        const w = Math.sin(onda.fase) * 1.6;
+        const c = new Path2D();
+        c.moveTo(5, -14.5); c.quadraticCurveTo(-5, -18, -16, -13 + w);
+        c.lineTo(-18.5, -3 + w * 1.4); c.quadraticCurveTo(-8, -5, 2, -8.5); c.closePath();
+        _contornar(ctx, c, cor, pal.contorno, lw * 1.6);
+        ctx.strokeStyle = borda; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-16, -12.5 + w); ctx.lineTo(-18.2, -3.4 + w * 1.4); ctx.stroke();
+    },
+    bolhas: (ctx, pal, lw, onda, tempo) => {
+        ctx.strokeStyle = 'rgba(230,250,255,0.95)'; ctx.lineWidth = 1.3;
+        const a0 = ctx.globalAlpha;
+        for (let i = 0; i < 3; i++) {
+            const sobe = ((tempo * 9 + i * 6) % 18);
+            const x = 20 + i * 4 + Math.sin(tempo * 3 + i) * 1.5, y = -22 - sobe, r = 2.2 + i * 0.6;
+            ctx.globalAlpha = a0 * (1 - sobe / 18);
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.25, 0, Math.PI * 2); ctx.stroke();
+        }
+    },
+    // ── cabeça ──
+    coroa: (ctx, pal, lw) => {
+        ctx.translate(-0.5, -10.4); ctx.rotate(-0.25);
+        const c = new Path2D();
+        c.moveTo(-5, 0); c.lineTo(-5, -4); c.lineTo(-2.5, -1.8); c.lineTo(0, -5.6); c.lineTo(2.5, -1.8); c.lineTo(5, -4); c.lineTo(5, 0); c.closePath();
+        _contornar(ctx, c, '#FFD54A', '#8A5A00', lw * 1.2);
+        ctx.fillStyle = '#E53935'; ctx.beginPath(); ctx.arc(0, -1.3, 1, 0, Math.PI * 2); ctx.fill();
+    },
+    aureola: (ctx, pal, lw, onda, tempo) => {
+        const y = -21 + Math.sin(tempo * 2.5) * 0.6;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz('#FFE08A'), -6, y - 8, 16, 16);
+        ctx.restore();
+        ctx.strokeStyle = '#8A5A00'; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.ellipse(2, y, 6.5, 2, -0.1, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#FFE08A'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(2, y, 6.5, 2, -0.1, 0, Math.PI * 2); ctx.stroke();
+    },
+    faixaNinja: (ctx, pal, lw, onda) => {
+        for (let i = 0; i < 2; i++) {
+            const a = (192 + i * 14) * Math.PI / 180 + 0.25 * Math.sin(onda.fase * 1.5 - i);
+            desenharMecha(ctx, -6.5, -7, a, 0.3 * Math.sin(onda.fase - i), 10, 3.2, '#E53935', 'rgba(255,255,255,0.3)', pal.contorno, lw * 0.6);
+        }
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = pal.contorno; ctx.lineWidth = 4.8;
+        ctx.beginPath(); ctx.moveTo(-6.5, -7.2); ctx.quadraticCurveTo(3, -11, 11.5, -8.2); ctx.stroke();
+        ctx.strokeStyle = '#E53935'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-6.5, -7.2); ctx.quadraticCurveTo(3, -11, 11.5, -8.2); ctx.stroke();
+    },
+    chifrinhos: (ctx, pal, lw) => {
+        for (const [x, y, r] of [[-1.5, -10, -0.35], [9, -8.6, 0.45]]) {
+            ctx.save(); ctx.translate(x, y); ctx.rotate(r);
+            const c = new Path2D(); c.moveTo(-1.7, 0.5); c.quadraticCurveTo(-0.5, -3, 0.4, -5.2); c.lineTo(1.7, 0.5); c.closePath();
+            _contornar(ctx, c, '#FF5252', pal.contorno, lw * 1.1);
+            ctx.restore();
+        }
+    },
+    antena: (cor) => (ctx, pal, lw, onda, tempo) => {
+        ctx.strokeStyle = pal.contorno; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-1, -10.5); ctx.quadraticCurveTo(-1.5, -16, -4, -19.5); ctx.stroke();
+        const c = new Path2D(); c.arc(-4, -19.5, 1.8, 0, Math.PI * 2);
+        _contornar(ctx, c, cor, pal.contorno, lw * 0.6);
+        if (Math.sin(tempo * 6) > 0) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.drawImage(spriteLuz(cor), -9, -24.5, 10, 10);
+        }
+    },
+    chapeu: (ctx, pal, lw, onda) => {
+        desenharMecha(ctx, -3, -13, (205 + 6 * Math.sin(onda.fase)) * Math.PI / 180, 0.4, 11, 3.6, '#FFE08A', 'rgba(255,255,255,0.4)', pal.contorno, lw * 0.6);
+        ctx.translate(1.5, -11.5); ctx.rotate(-0.2);
+        const c = new Path2D(); c.ellipse(0, 0, 7.8, 3.2, 0, 0, Math.PI * 2);
+        _contornar(ctx, c, '#7B3FA0', pal.contorno, lw * 1.2);
+        ctx.fillStyle = '#9C5CC4'; ctx.beginPath(); ctx.ellipse(-1.5, -1, 4, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+    },
+    elmo: (ctx, pal, lw, onda) => {
+        desenharMecha(ctx, 2, -12, (250 + 8 * Math.sin(onda.fase)) * Math.PI / 180, -0.5, 10, 4.2, '#E53935', 'rgba(255,255,255,0.3)', pal.contorno, lw * 0.6);
+        const c = new Path2D();
+        c.arc(3, -3, 9.8, Math.PI * 1.02, Math.PI * 1.98); c.closePath();
+        _contornar(ctx, c, '#B0BEC5', pal.contorno, lw * 1.4);
+        ctx.strokeStyle = '#78909C'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-6.4, -3.6); ctx.lineTo(12.4, -3.6); ctx.stroke();
+    },
+    tiara: (ctx, pal, lw) => {
+        for (const [x, y, t] of [[-5, -8.5, 3.5], [-1.8, -10.8, 5], [1.6, -11.6, 3.5]]) {
+            const c = new Path2D(); c.moveTo(x - 1.4, y + 1); c.lineTo(x, y - t); c.lineTo(x + 1.4, y + 1); c.lineTo(x, y + 2); c.closePath();
+            _contornar(ctx, c, '#CFF4FF', '#2A3A7A', lw * 0.8);
+        }
+    },
+    folhas: (ctx, pal, lw) => {
+        for (const [x, y, r] of [[-5, -8, -1.1], [-2, -10.6, -0.5], [1.6, -11.6, 0.2]]) {
+            ctx.save(); ctx.translate(x, y); ctx.rotate(r);
+            const c = new Path2D(); c.ellipse(0, -2, 1.6, 3, 0, 0, Math.PI * 2);
+            _contornar(ctx, c, '#4CD07D', '#1E6B3A', lw * 0.7);
+            ctx.restore();
+        }
+    },
+    oculos: (ctx, pal, lw) => {
+        ctx.strokeStyle = pal.contorno; ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.moveTo(1.4, -3.4); ctx.lineTo(-6, -4.5); ctx.stroke();
+        const c = new Path2D(); c.ellipse(5.8, -2.8, 4.6, 3.4, -0.1, 0, Math.PI * 2);
+        _contornar(ctx, c, '#1A1033', '#FF4FD8', lw * 0.7);
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(3.6, -4.6); ctx.lineTo(6.2, -4.9); ctx.stroke();
+    },
+    chama: (ctx, pal, lw, onda, tempo) => {
+        const f = Math.sin(tempo * 14) * 0.8;
+        ctx.translate(8.3, -23);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz('#FF8A00'), -7, -12, 14, 14);
+        ctx.globalCompositeOperation = 'source-over';
+        const fora = new Path2D(); fora.moveTo(0, 0); fora.quadraticCurveTo(-3, -3, 0, -7.5 - f); fora.quadraticCurveTo(3, -3, 0, 0);
+        _contornar(ctx, fora, '#FF9800', '#B23B00', lw * 0.5);
+        ctx.fillStyle = '#FFF176';
+        ctx.beginPath(); ctx.moveTo(0, -0.5); ctx.quadraticCurveTo(-1.4, -2.5, 0, -4.6 - f * 0.6); ctx.quadraticCurveTo(1.4, -2.5, 0, -0.5); ctx.fill();
+    },
+    lacinho: (cor) => (ctx, pal, lw) => {
+        ctx.translate(-3.5, -10.5); ctx.rotate(-0.4);
+        for (const s of [-1, 1]) {
+            const c = new Path2D(); c.moveTo(0, 0); c.lineTo(4 * s, -2.6); c.lineTo(4 * s, 2.6); c.closePath();
+            _contornar(ctx, c, cor, pal.contorno, lw * 0.6);
+        }
+        const n = new Path2D(); n.arc(0, 0, 1.4, 0, Math.PI * 2);
+        _contornar(ctx, n, cor, pal.contorno, lw * 0.6);
+    }
+};
+// id do personagem → acessórios (ver o array `characters` no game.js)
+const ACESSORIOS = {
+    0: { corpo: ACESS.marca('#FF5FA8') },                        // Padrão: marca de estrela rosa
+    1: { frente: ACESS.chama },                                  // Fogo: chifre em chamas (desenhada depois do chifre)
+    2: { cabeca: ACESS.tiara },                                  // Gelo: tiara de cristais
+    3: { tras: ACESS.capa('#9C6BFF', '#E0D4FF') },               // Sombra: capa roxa
+    4: { corpo: ACESS.marca('#FFC94A') },                        // Dourado: marca dourada
+    5: { cabeca: ACESS.folhas },                                 // Esmeralda: coroa de folhas
+    6: { corpo: ACESS.constelacao },                             // Cósmico: constelação
+    7: { cabeca: ACESS.oculos },                                 // Neon: óculos escuros
+    9: { cabeca: ACESS.antena('#FF3B3B') },                      // Ciborgue: antena
+    10: { depois: ACESS.bolhas },                                // Aqua: bolhas
+    11: { tras: ACESS.capa('#C62828', '#FFD54A'), cabeca: ACESS.elmo },        // Guerreiro
+    12: { cabeca: ACESS.aureola, asinhas: true },                // Anjo
+    13: { cabeca: ACESS.chifrinhos },                            // Oni
+    14: { corpo: ACESS.manchas('#B7FF6B') },                     // Tóxico
+    15: { cabeca: ACESS.faixaNinja },                            // Ninja
+    16: { cabeca: ACESS.antena('#00E5FF'), corpo: ACESS.painel }, // Robô
+    17: { tras: ACESS.cristais },                                // Cristal
+    18: { cabeca: ACESS.chapeu },                                // Bardo
+    19: { tras: ACESS.capa('#C62828', '#FFFFFF'), cabeca: ACESS.coroa },        // Rei
+    21: { cabeca: ACESS.lacinho('#FF5FA8') },                    // Gatinho
+    22: { cabeca: ACESS.lacinho('#6FD3FF') }                     // Coelho
+};
+function desenharAcessorio(ctx, id, onde, pal, lw, onda, tempo) {
+    const a = ACESSORIOS[id];
+    if (!a || !a[onde]) return;
+    ctx.save();
+    a[onde](ctx, pal, lw, onda, tempo);
+    ctx.restore();
+}
+const temAsinhas = (id) => !!(ACESSORIOS[id] && ACESSORIOS[id].asinhas);
+
 // ─── Desenho principal ───
 // x, y: canto da hitbox na tela; p: estado do jogador; tempo: segundos; escala: 1,3 no tamanho normal
 // Quando precisa de transparência ou flash (Fantasma, dano), desenha numa camada fora da tela e
@@ -595,7 +845,7 @@ function desenharUnicornio(ctx, x, y, p, tempo, escala) {
     }
     const m = ctx.getTransform();
     const s = Math.hypot(m.a, m.b) || 1;
-    const tam = 220 * Math.max(p.w / 50, p.h / 40);        // área lógica ao redor do personagem
+    const tam = 180 * Math.max(p.w / 50, p.h / 40);        // área lógica ao redor do personagem
     const px = Math.ceil(tam * s);
     if (!_camada) { _camada = document.createElement('canvas'); _camadaCtx = _camada.getContext('2d'); }
     if (_camada.width < px) { _camada.width = px; _camada.height = px; }
@@ -622,16 +872,23 @@ function desenharUnicornio(ctx, x, y, p, tempo, escala) {
 function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const esp = especieDe(p.char);
     const lw = Math.max(2.2, 2.0 / (escala * p.w / 50));   // contorno ~2,9 px, nunca menos de 2 px
-    const kPouso = p.pouso ? (1 - p.pouso.t / 10) * Math.min(1, p.pouso.forca / 12) * (1 - p.mistura) : 0;
-    const patas = calcularPatas(p, tempo, kPouso);
+    // pose de recuperação do pouso: curva com saída suave (mais visível no começo)
+    const passosPouso = typeof PASSOS_POUSO === 'number' ? PASSOS_POUSO : 10;
+    const kPouso = p.pouso ? Math.pow(Math.max(0, 1 - p.pouso.t / passosPouso), 2) * Math.min(1, p.pouso.forca / 12) * (1 - p.mistura * 0.5) : 0;
+    const patas = calcularPatas(p, tempo, kPouso, esp);
     const naCorrida = 1 - p.mistura;
+    const coxa = esp.coxa, canela = esp.canela;
 
     // Cascos plantados: desloca o corpo para que o casco mais baixo fique exatamente na linha do chão
     const maisBaixo = Math.max(
-        alturaCasco(PIVO_PATA_TRAS[1], patas.tb), alturaCasco(PIVO_PATA_TRAS[1], patas.tf),
-        alturaCasco(PIVO_PATA_FRENTE[1], patas.db), alturaCasco(PIVO_PATA_FRENTE[1], patas.df));
-    const ajusteChao = (CHAO - maisBaixo) * naCorrida;
-    const inclinacao = 3.5 * Math.sin(2 * Math.PI * (patas.fase - 0.2)) * naCorrida;   // graus
+        alturaCasco(PIVO_PATA_TRAS[1], patas.tb, coxa, canela), alturaCasco(PIVO_PATA_TRAS[1], patas.tf, coxa, canela),
+        alturaCasco(PIVO_PATA_FRENTE[1], patas.db, coxa, canela), alturaCasco(PIVO_PATA_FRENTE[1], patas.df, coxa, canela));
+    let ajusteChao = (CHAO - maisBaixo) * naCorrida;
+    // coelho: pulinho quando as patas traseiras empurram
+    if (esp.salto) ajusteChao -= esp.salto * Math.max(0, Math.sin(2 * Math.PI * (patas.fase - 0.05))) * naCorrida;
+    const inclinacao = esp.inclinacao * Math.sin(2 * Math.PI * (patas.fase - 0.2)) * naCorrida;   // graus
+    // gato: a coluna estica e encolhe com a passada
+    const flexao = 1 + esp.flexao * Math.sin(2 * Math.PI * patas.fase) * naCorrida;
 
     ctx.save();
     // ── Rig: posição, inclinação, squash ancorado nos pés, tamanho, recuo de dano ──
@@ -650,60 +907,92 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const angPescocoGraus = INCLINACAO_PESCOCO
         + (-0.6 * inclinacao + 4 * Math.sin(2 * Math.PI * (patas.fase - 0.28))) * naCorrida
         + (sVy > 0 ? -10 * sVy : -6 * sVy)
-        + 10 * kPouso;
+        + 12 * kPouso;
     const angPescoco = angPescocoGraus * Math.PI / 180;
     const angOrelha = -6 + 8 * Math.sin(2 * Math.PI * patas.fase) * naCorrida
         + (sVy > 0 ? 25 * sVy : 5 * sVy) + (dano.t < 0.6 ? 30 : 0);
     const kPesc = esp.pescoco;   // gato e coelho têm pescoço mais curto
 
+    // Humor do rosto conforme o estado
+    const dashando = typeof isDashing !== 'undefined' && isDashing;
+    const humor = dashando ? 'determinado' : kPouso > 0.3 ? 'feliz' : sVy > 0.3 ? 'subindo' : sVy < -0.4 ? 'caindo' : 'correndo';
+
     const vel = typeof gameSpeed === 'number' ? gameSpeed : 5;
     const ondaCrina = atualizarOnda(p, tempo, vel);
+    const idAcc = p.char.id;
+    const lwMecha = lw * 0.6;   // linhas internas mais finas que o contorno externo
+
+    // Transformação do tronco (mais curto; gato achatado e com a coluna flexionando)
+    const comTronco = (f) => { ctx.save(); ctx.scale(ESCALA_TRONCO_X * flexao, esp.troncoY); f(); ctx.restore(); };
 
     // ── 1. Patas do fundo ──
     const largTras = esp.cauda === 'pompom' ? 8.5 : 7;   // coelho: coxas traseiras fortes
-    desenharPata(ctx, PIVO_PATA_TRAS[0] + 2.5, PIVO_PATA_TRAS[1], patas.tb[0], patas.tb[1], largTras, 3.6, pal.fundo, pal, lw, esp.pe);
-    desenharPata(ctx, PIVO_PATA_FRENTE[0] + 2.5, PIVO_PATA_FRENTE[1], patas.db[0], patas.db[1], 5.5, 3.4, pal.fundo, pal, lw, esp.pe);
+    desenharPata(ctx, PIVO_PATA_TRAS[0] + 2.5, PIVO_PATA_TRAS[1], patas.tb[0], patas.tb[1], largTras, 3.6, pal.fundo, pal, lw, esp.pe, coxa, canela);
+    desenharPata(ctx, PIVO_PATA_FRENTE[0] + 2.5, PIVO_PATA_FRENTE[1], patas.db[0], patas.db[1], 5.5, 3.4, pal.fundo, pal, lw, esp.pe, coxa, canela);
 
-    // asa de trás: penas só no voo; o dragão sempre tem asas de morcego (batem mais forte no voo)
+    // asa de trás: penas no voo (ou asinhas do Anjo); o dragão sempre tem asas de morcego
     const voando = typeof isFlying !== 'undefined' && isFlying;
+    const asinhas = !voando && temAsinhas(idAcc);
     const bateAsa = 25 * Math.sin(tempo * 2 * Math.PI * 2.2) * Math.PI / 180;
     const bateMorcego = (voando ? 25 * Math.sin(tempo * 2 * Math.PI * 2.2) : 6 * Math.sin(tempo * 2 * Math.PI)) * Math.PI / 180;
+    const desenharAsaPenas = (fundo) => {
+        ctx.save(); ctx.translate(PIVO_ASA[0] + (fundo ? 2 : 0), PIVO_ASA[1] - (fundo ? 1 : 0));
+        if (asinhas) ctx.scale(0.55, 0.55);
+        desenharAsa(ctx, pal, lw, (asinhas ? bateAsa * 0.4 : bateAsa) * (fundo ? 0.9 : 1) + (fundo ? 0.15 : 0), fundo);
+        ctx.restore();
+    };
     if (esp.asas === 'morcego') {
         ctx.save(); ctx.translate(PIVO_ASA[0] + 2, PIVO_ASA[1] - 1);
         desenharAsaMorcego(ctx, pal, lw, bateMorcego * 0.9 + 0.2, true);
         ctx.restore();
-    } else if (voando) {
-        ctx.save(); ctx.translate(PIVO_ASA[0] + 2, PIVO_ASA[1] - 1);
-        desenharAsa(ctx, pal, lw, bateAsa * 0.9 + 0.15, true);
-        ctx.restore();
-    }
+    } else if (voando || asinhas) desenharAsaPenas(true);
 
-    // ── 2. Cauda, crina de fundo e espinhos (atrás do corpo) ──
-    if (esp.cauda === 'mechas') desenharCauda(ctx, p, pal, lw, ondaCrina);
+    // ── 2. Cauda, crina de fundo, espinhos e acessórios de trás (atrás do corpo) ──
+    if (esp.cauda === 'mechas') desenharCauda(ctx, p, pal, lwMecha, ondaCrina);
     else desenharCaudaEspecie(ctx, p, pal, lw, ondaCrina, esp);
     if (esp.crina) {
         ctx.save();
         ctx.translate(PIVO_PESCOCO[0], PIVO_PESCOCO[1]); ctx.rotate(angPescoco);
-        desenharCrina(ctx, p, pal, lw, ondaCrina, angPescoco, true);
+        desenharCrina(ctx, p, pal, lwMecha, ondaCrina, angPescoco, true);
         ctx.restore();
     }
     if (esp.espinhos) desenharEspinhos(ctx, pal, lw, angPescoco, kPesc);
+    desenharAcessorio(ctx, idAcc, 'antes', pal, lw, ondaCrina, tempo);
 
-    // ── 3. Tronco + pescoço: contorno único por trás, depois o preenchimento ──
+    // ── 3. Silhueta única: contorno por trás de tronco + pescoço + patas da frente, depois o preenchimento ──
+    // (as patas da frente se fundem ao corpo: o contorno delas não corta mais a barriga)
+    desenharPata(ctx, PIVO_PATA_TRAS[0], PIVO_PATA_TRAS[1], patas.tf[0], patas.tf[1], largTras, 3.6, pal.corpo, pal, lw, esp.pe, coxa, canela, 'contorno');
+    desenharPata(ctx, PIVO_PATA_FRENTE[0], PIVO_PATA_FRENTE[1], patas.df[0], patas.df[1], 5.5, 3.4, pal.corpo, pal, lw, esp.pe, coxa, canela, 'contorno');
     ctx.lineJoin = 'round';
     ctx.strokeStyle = pal.contorno;
     ctx.lineWidth = lw * 2;
-    ctx.stroke(FORMAS.tronco);
+    comTronco(() => ctx.stroke(FORMAS.tronco));
     ctx.save();
     ctx.translate(PIVO_PESCOCO[0], PIVO_PESCOCO[1]); ctx.rotate(angPescoco); ctx.scale(1, kPesc);
     ctx.stroke(FORMAS.pescoco);
     ctx.restore();
 
-    preencherSombreado(ctx, FORMAS.tronco, pal.corpo, pal.sombra);
-    // brilhos do dorso e da anca
-    ctx.fillStyle = pal.claro;
-    ctx.beginPath(); ctx.ellipse(-5, -11, 9, 2.2, -0.05, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-14, -10, 4, 2.6, -0.4, 0, Math.PI * 2); ctx.fill();
+    comTronco(() => {
+        preencherSombreado(ctx, FORMAS.tronco, pal.corpo, pal.sombra);
+        ctx.save(); ctx.clip(FORMAS.tronco);
+        if (esp.ventre && pal.ventre) {
+            // dragão: barriga clara com placas
+            ctx.fillStyle = pal.ventre;
+            ctx.beginPath(); ctx.ellipse(1, 3, 17, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = pal.contornoInterno; ctx.lineWidth = lw * 0.35;
+            ctx.beginPath(); for (const xx of [-9, -4, 1, 6, 11]) { ctx.moveTo(xx, -1); ctx.lineTo(xx + 1, 4); } ctx.stroke();
+        }
+        // brilhos do dorso e da anca
+        ctx.fillStyle = pal.claro;
+        ctx.beginPath(); ctx.ellipse(-5, -11, 9, 2.2, -0.05, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-14, -10, 4, 2.6, -0.4, 0, Math.PI * 2); ctx.fill();
+        // luz de borda (1px clara no topo): separa o personagem do céu roxo
+        ctx.translate(0.7, 0.9); ctx.strokeStyle = pal.claro; ctx.lineWidth = 1.2; ctx.globalAlpha *= 0.8;
+        ctx.stroke(FORMAS.tronco);
+        ctx.restore();
+    });
+
+    desenharAcessorio(ctx, idAcc, 'tras', pal, lw, ondaCrina, tempo);
 
     // ── 4. Pescoço, crina, cabeça (hierarquia: tronco → pescoço → cabeça) ──
     ctx.save();
@@ -714,46 +1003,53 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     ctx.restore();
 
     // crina: 5 mechas ao longo da crista do pescoço
-    if (esp.crina) desenharCrina(ctx, p, pal, lw, ondaCrina, angPescoco, false);
+    if (esp.crina) desenharCrina(ctx, p, pal, lwMecha, ondaCrina, angPescoco, false);
 
     // cabeça: desconta metade do balanço do pescoço (olhar estável) e aponta o focinho um pouco para baixo
     ctx.translate(NUCA_NO_PESCOCO[0], NUCA_NO_PESCOCO[1] * kPesc);
     ctx.rotate(-INCLINACAO_PESCOCO * Math.PI / 180 - (angPescoco - INCLINACAO_PESCOCO * Math.PI / 180) * 0.5
-        + INCLINACAO_CABECA * Math.PI / 180);
+        + INCLINACAO_CABECA * Math.PI / 180 + 0.12 * kPouso);
     ctx.scale(esp.escalaCabeca, esp.escalaCabeca);
+    const lwCab = lw / esp.escalaCabeca * 1.15;   // a cabeça cresceu: o contorno não engrossa junto
 
     // orelha de trás (gato e coelho têm duas visíveis)
-    if (esp.orelha === 'gato' || esp.orelha === 'coelho') desenharOrelhaEspecie(ctx, pal, lw, esp, angOrelha, ondaCrina, true);
+    if (esp.orelha === 'gato' || esp.orelha === 'coelho') desenharOrelhaEspecie(ctx, pal, lwCab, esp, angOrelha, ondaCrina, true);
 
     const formaCabeca = FORMAS[esp.cabeca], formaFocinho = FORMAS[esp.focinho];
-    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 2;
+    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lwCab * 2;
     ctx.stroke(formaCabeca);
     preencherSombreado(ctx, formaCabeca, pal.corpo, pal.sombra);
     ctx.save(); ctx.clip(formaCabeca);
     ctx.fillStyle = pal.focinho; ctx.fill(formaFocinho);
     ctx.fillStyle = pal.claro; ctx.beginPath(); ctx.arc(0, -8, 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.translate(0.6, 0.8); ctx.strokeStyle = pal.claro; ctx.lineWidth = 1; ctx.globalAlpha *= 0.8;
+    ctx.stroke(formaCabeca);   // luz de borda da cabeça
     ctx.restore();
     // bochecha, nariz/boca da espécie, olho
     ctx.fillStyle = pal.bochecha;
     ctx.beginPath(); ctx.ellipse(9, 2.2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-    desenharRostoEspecie(ctx, p, pal, lw, esp);
-    desenharOlho(ctx, p, pal, lw, dano);
+    desenharRostoEspecie(ctx, p, pal, lwCab, esp, humor);
+    desenharOlho(ctx, p, pal, lwCab, dano, humor);
 
-    // topete (só unicórnio): 2 mechas curtas para cima e para trás (não cobre o olho)
+    // topete (só unicórnio): 3 mechas — duas para trás e uma caindo para a frente (sem cobrir o olho)
     if (esp.topete) {
-        for (let i = 0; i < 2; i++) {
-            const a = (-150 + i * 22) * Math.PI / 180 + ondaCrina.A * 0.5 * Math.sin(ondaCrina.fase - i);
-            desenharMecha(ctx, 1.5 - i * 2, -10, a, 0.5, 7, 4, pal.crina[i === 0 ? 1 : 0], 'rgba(255,255,255,0.45)', pal.contornoCrina, lw * 0.7);
-        }
+        const topete = [[-150, 0.5, 11, 6, 1], [-128, 0.5, 10, 5.5, 0], [-62, -0.5, 8, 5, 2]];
+        topete.forEach(([ang, dobra, L, W, cor], i) => {
+            const a = ang * Math.PI / 180 + ondaCrina.A * 0.5 * Math.sin(ondaCrina.fase - i);
+            desenharMecha(ctx, 1.5 - i * 1.5, -10, a, dobra, L, W, pal.crina[cor], 'rgba(255,255,255,0.45)', pal.contornoCrina, lwMecha);
+        });
     }
 
     // orelha da frente
-    desenharOrelhaEspecie(ctx, pal, lw, esp, angOrelha, ondaCrina, false);
+    desenharOrelhaEspecie(ctx, pal, lwCab, esp, angOrelha, ondaCrina, false);
+
+    // acessórios da cabeça (antes do chifre: coroa, chapéu, faixa... o chifre "atravessa")
+    desenharAcessorio(ctx, idAcc, 'cabeca', pal, lwCab, ondaCrina, tempo);
 
     // chifre(s)
     if (esp.chifre === 'unicornio') {
         // chifre espiral (sem shadowBlur): base, face de sombra, faixas da espiral, brilho
-        ctx.strokeStyle = pal.chifre.contorno; ctx.lineWidth = lw * 1.5; ctx.stroke(FORMAS.chifre);
+        ctx.strokeStyle = pal.chifre.contorno; ctx.lineWidth = lwCab * 1.5; ctx.stroke(FORMAS.chifre);
         ctx.fillStyle = pal.chifre.base; ctx.fill(FORMAS.chifre);
         ctx.save();
         ctx.clip(FORMAS.chifre);
@@ -766,13 +1062,11 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
         ctx.beginPath(); ctx.moveTo(2.8, -11.5); ctx.lineTo(7.6, -21.8); ctx.stroke();
         ctx.restore();
     } else if (esp.chifre === 'dragao') {
-        // dois chifres curvos para trás
+        // dois chifres curtos e grossos, curvos para trás
         for (const [dx, k] of [[4.5, 0.85], [0, 1]]) {
-            ctx.save(); ctx.translate(dx, 0); ctx.rotate(-0.55); ctx.scale(k, k);   // inclinados para trás
-            ctx.strokeStyle = pal.chifre.contorno; ctx.lineWidth = lw * 1.4; ctx.stroke(FORMAS.chifreDragao);
+            ctx.save(); ctx.translate(dx, 0); ctx.rotate(-0.3); ctx.scale(k, k);
+            ctx.strokeStyle = pal.chifre.contorno; ctx.lineWidth = lwCab * 1.4; ctx.stroke(FORMAS.chifreDragao);
             ctx.fillStyle = pal.chifre.base; ctx.fill(FORMAS.chifreDragao);
-            ctx.strokeStyle = pal.chifre.sombra; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(-3, -11); ctx.lineTo(-1.5, -12.2); ctx.moveTo(-5.5, -13.8); ctx.lineTo(-4.2, -14.8); ctx.stroke();
             ctx.restore();
         }
     }
@@ -786,6 +1080,7 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     }
     if (pal.olhoCiborgue && !p.assustado) ctx.drawImage(spriteLuz('#FF2A2A'), 5.7 - 5, -2.6 - 5, 10, 10);
     ctx.restore();
+    desenharAcessorio(ctx, idAcc, 'frente', pal, lwCab, ondaCrina, tempo);   // ex.: chama na ponta do chifre
 
     ctx.restore(); // fim pescoço/cabeça
 
@@ -794,16 +1089,14 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
         ctx.save(); ctx.translate(PIVO_ASA[0], PIVO_ASA[1]);
         desenharAsaMorcego(ctx, pal, lw, bateMorcego, false);
         ctx.restore();
-    } else if (voando) {
-        ctx.save(); ctx.translate(PIVO_ASA[0], PIVO_ASA[1]);
-        desenharAsa(ctx, pal, lw, bateAsa, false);
-        ctx.restore();
-    }
+    } else if (voando || asinhas) desenharAsaPenas(false);
 
-    // ── 5. Patas da frente (por cima do corpo) ──
-    desenharPata(ctx, PIVO_PATA_TRAS[0], PIVO_PATA_TRAS[1], patas.tf[0], patas.tf[1], largTras, 3.6, pal.corpo, pal, lw, esp.pe);
-    desenharPata(ctx, PIVO_PATA_FRENTE[0], PIVO_PATA_FRENTE[1], patas.df[0], patas.df[1], 5.5, 3.4, pal.corpo, pal, lw, esp.pe);
+    // ── 5. Patas da frente: só o preenchimento (o contorno já está na silhueta) ──
+    desenharPata(ctx, PIVO_PATA_TRAS[0], PIVO_PATA_TRAS[1], patas.tf[0], patas.tf[1], largTras, 3.6, pal.corpo, pal, lw, esp.pe, coxa, canela, 'preenchimento');
+    desenharPata(ctx, PIVO_PATA_FRENTE[0], PIVO_PATA_FRENTE[1], patas.df[0], patas.df[1], 5.5, 3.4, pal.corpo, pal, lw, esp.pe, coxa, canela, 'preenchimento');
 
+    desenharAcessorio(ctx, idAcc, 'corpo', pal, lw, ondaCrina, tempo);    // marcas na anca (por cima da coxa)
+    desenharAcessorio(ctx, idAcc, 'depois', pal, lw, ondaCrina, tempo);
     ctx.restore();
 }
 
@@ -840,19 +1133,19 @@ function desenharOrelhaEspecie(ctx, pal, lw, esp, angOrelha, onda, deTras) {
 function desenharCaudaEspecie(ctx, p, pal, lw, onda, esp) {
     const s = Math.max(-1, Math.min(1, -p.vy / 8)) * p.mistura;
     if (esp.cauda === 'reptil') {
-        // cauda grossa de dragão com ponta em espada
+        // cauda grossa de dragão com ponta em espada (a ponta é desenhada antes, para a cauda "soldar" por cima)
         const a = (165 - 25 * s + 10 * Math.sin(onda.fase)) * Math.PI / 180;
-        const dobra = 0.25 + 0.2 * Math.sin(onda.fase - 0.8);
-        desenharMecha(ctx, RAIZ_CAUDA[0] + 2, RAIZ_CAUDA[1] + 4, a, dobra, 22, 10, pal.corpo, 'rgba(255,255,255,0.25)', pal.contorno, lw * 1.6);
-        // ponta: losango na cor da crina
-        const h = 11, a2 = a + dobra;
-        const mx = RAIZ_CAUDA[0] + 2 + Math.cos(a) * h, my = RAIZ_CAUDA[1] + 4 + Math.sin(a) * h;
+        const dobra = 0.15 + 0.15 * Math.sin(onda.fase - 0.8);
+        const L = 22, h = L / 2 * 0.85, a2 = a + dobra;
+        const rx = RAIZ_CAUDA[0] + 2, ry = RAIZ_CAUDA[1] + 4;
+        const mx = rx + Math.cos(a) * L / 2, my = ry + Math.sin(a) * L / 2;
         const px = mx + Math.cos(a2) * h, py = my + Math.sin(a2) * h;
         ctx.save(); ctx.translate(px, py); ctx.rotate(a2);
-        ctx.beginPath(); ctx.moveTo(-1, 0); ctx.lineTo(3, -3.5); ctx.lineTo(7, 0); ctx.lineTo(3, 3.5); ctx.closePath();
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(3, -4.2); ctx.lineTo(8, 0); ctx.lineTo(3, 4.2); ctx.closePath();
         ctx.lineWidth = lw * 1.2; ctx.strokeStyle = pal.contorno; ctx.stroke();
         ctx.fillStyle = pal.crina[0]; ctx.fill();
         ctx.restore();
+        desenharMecha(ctx, rx, ry, a, dobra, L, 12, pal.corpo, 'rgba(255,255,255,0.25)', pal.contorno, lw * 1.6);
     } else if (esp.cauda === 'gato') {
         // cauda fina, levantada, com a ponta enrolada
         const a = (205 + 15 * s + 8 * Math.sin(onda.fase)) * Math.PI / 180;
@@ -963,8 +1256,12 @@ function spriteLuz(cor) {
 const _estrelinhas = Array.from({ length: MAX_ESTRELINHAS }, () => ({ ativa: false }));
 
 // Converte um ponto local (u) do corpo para a tela (sem rotação — suficiente para efeitos)
+// Converte um ponto local (u) do corpo para a tela, acompanhando o giro (mortal/inclinação) e o squash
 function pontoLocalNaTela(p, ux, uy, escala) {
-    return { x: p.x + p.w / 2 + ux * escala * p.w / 50, y: p.y + p.h / 2 + uy * escala * p.h / 40 };
+    const sx = (p.scaleX || 1) * escala * p.w / 50, sy = (p.scaleY || 1) * escala * p.h / 40;
+    const lx = ux * sx, ly = uy * sy;
+    const a = (p.rot || 0) + (p.spin || 0), c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x + p.w / 2 + lx * c - ly * s, y: p.y + p.h / 2 + lx * s + ly * c };
 }
 
 // Chamado 1 vez por passo de física pelo jogo
@@ -1017,29 +1314,35 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
     ctx.drawImage(spriteBrilho(pal.crina[1]), centro.x - tamBrilho / 2, centro.y - tamBrilho / 2, tamBrilho, tamBrilho);
     ctx.restore();
 
-    // fita de arco-íris (só correndo rápido ou no ar)
+    // fita de arco-íris: aparece/some suavemente (correndo rápido ou no ar); 1 caminho por faixa de cor
     const r = p.rastro;
-    if (r && r.length > 2 && (vel > 4 || !p.onGround)) {
+    const alvoFita = (vel > 4 || !p.onGround) ? 1 : 0;
+    p.alfaFita = (p.alfaFita || 0) + (alvoFita - (p.alfaFita || 0)) * 0.12;
+    if (r && r.length > 2 && p.alfaFita > 0.02) {
         const raiz = pontoLocalNaTela(p, RAIZ_CAUDA[0], RAIZ_CAUDA[1], 1.3);
         const pts = [{ x: raiz.x, y: raiz.y }];
         for (let i = 1; i < r.length; i++) pts.push({ x: r[i].x - dist, y: r[i].y });
-        const n = pts.length;
+        const n = pts.length, ponta = pts[n - 1];
         ctx.save();
-        for (let i = 0; i < n - 1; i++) {
-            const k = 1 - i / (n - 1);                           // 1 perto da cauda, 0 na ponta
-            ctx.globalAlpha = 0.85 * k;
-            const larg = RASTRO_LARGURA * (0.4 + 0.6 * k) * (p.w / 50);
-            for (let b = 0; b < 4; b++) {
-                const off0 = (b - 2) * larg, off1 = off0 + larg;
-                ctx.fillStyle = pal.crina[b];
-                ctx.beginPath();
-                ctx.moveTo(pts[i].x, pts[i].y + off0);
-                ctx.lineTo(pts[i + 1].x, pts[i + 1].y + off0);
-                ctx.lineTo(pts[i + 1].x, pts[i + 1].y + off1 + 0.5);
-                ctx.lineTo(pts[i].x, pts[i].y + off1 + 0.5);
-                ctx.closePath();
-                ctx.fill();
+        ctx.globalAlpha *= p.alfaFita;
+        for (let b = 0; b < 4; b++) {
+            // borda de cima indo para trás, borda de baixo voltando: uma faixa só, afinando até a ponta
+            ctx.beginPath();
+            for (let i = 0; i < n; i++) {
+                const k = 1 - i / (n - 1), larg = RASTRO_LARGURA * (0.4 + 0.6 * k) * (p.w / 50);
+                ctx.lineTo(pts[i].x, pts[i].y + (b - 2) * larg);
             }
+            for (let i = n - 1; i >= 0; i--) {
+                const k = 1 - i / (n - 1), larg = RASTRO_LARGURA * (0.4 + 0.6 * k) * (p.w / 50);
+                ctx.lineTo(pts[i].x, pts[i].y + (b - 1) * larg + 0.5);
+            }
+            ctx.closePath();
+            const c = paraRGBA(pal.crina[b]);
+            const grad = ctx.createLinearGradient(raiz.x, raiz.y, ponta.x, ponta.y);
+            grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.85)`);
+            grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+            ctx.fillStyle = grad;
+            ctx.fill();
         }
         ctx.restore();
     }

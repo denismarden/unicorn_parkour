@@ -3454,6 +3454,7 @@ function aoPousar(topoY, estavaNoChao) {
         player.pouso = { t: 0, forca: vyImpacto };
         player.runPhase = (Math.floor(player.runPhase * FATOR_FASE_GALOPE) + 1 + 0.3) / FATOR_FASE_GALOPE;
         semInterpolar('runPhase'); // a passada recomeça sem "varrer" um ciclo inteiro num quadro
+        player.mistura = Math.min(player.mistura, 0.3);   // a pose de pouso aparece já no impacto
         if (player.spin < 0) player.giroRapido = true;
         if (vyImpacto > 8 || slamValido) {
             player.scaleX = 1.6;
@@ -3687,6 +3688,7 @@ function passoMorte() {
         player.vy += player.gravity;
         player.y += player.vy;
         player.spin -= 0.25;
+        player.mistura += (1 - player.mistura) * 0.3;   // patas abrem (pose de susto)
         atualizarParticulas(0);
     }
     if (passosMorte <= 0) mostrarGameOver();
