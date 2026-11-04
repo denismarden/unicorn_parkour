@@ -1011,35 +1011,203 @@ function buyUpgrade(id) {
     } else { alert("Estrelas insuficientes!"); }
 }
 
-function buySkin(id) {
-    let s = skins.find(x => x.id === id);
-    if (unlockedSkins.includes(id)) {
-        selectedSkin = id;
-        localStorage.setItem('uniparkourActiveSkin', selectedSkin);
-        renderCharMenu();
-        playSound('jump');
-    } else {
-        if (globalStars >= s.cost) {
-            if (confirm(`Desbloquear ${s.name} por ${s.cost} estrelas?`)) {
-                globalStars -= s.cost;
-                unlockedSkins.push(id);
-                selectedSkin = id;
-                localStorage.setItem('uniparkourGlobalStars', globalStars);
-                localStorage.setItem('uniparkourSkins', JSON.stringify(unlockedSkins));
-                localStorage.setItem('uniparkourActiveSkin', selectedSkin);
-                updateGlobalStarsDisplay();
-                renderCharMenu();
-                playSound('buy');
-            }
-        } else { alert("Estrelas insuficientes!"); }
+// ─────────────────────────────────────────────────────────────────────────
+// VISUAL DO PERSONAGEM (loja): auras, pelagens, rastros, chifres e chapéus
+// ─────────────────────────────────────────────────────────────────────────
+
+// Efeito de cada aura: forma das partículas, cores e movimento
+//  sobe = flutua para cima e fica para trás · cai = desce do alto · flutua = espalha em volta · faisca = estala rápido
+const AURA_EFEITO = {
+    golden: { forma: 'brilho', cores: ['#FFD54A', '#FFB300'], mov: 'sobe', brilho: '#FFD54A' },
+    shadow: { forma: 'fumaca', cores: ['#4B2A7A', '#2A1A4A'], mov: 'sobe' },
+    rainbow: { forma: 'brilho', cores: ['#FF5F7E', '#FFB347', '#FFE66D', '#7DDE92', '#6FC3FF', '#B387FF'], mov: 'flutua', brilho: '#FF9CCB' },
+    fire: { forma: 'chama', cores: ['#FF7A1A', '#FF4500'], mov: 'sobe', brilho: '#FF7A1A' },
+    ice: { forma: 'floco', cores: ['#CFF4FF', '#FFFFFF'], mov: 'cai', brilho: '#BFEFFF' },
+    electric: { forma: 'faisca', cores: ['#FFF176', '#9BE7FF'], mov: 'faisca', brilho: '#FFF176' },
+    nature: { forma: 'folha', cores: ['#4CD07D', '#9BE36B', '#FF9CCB'], mov: 'cai' },
+    void: { forma: 'fumaca', cores: ['#120A20', '#2A1A3A'], mov: 'sobe' },
+    galactic: { forma: 'estrela', cores: ['#C7A8F0', '#9BE7FF', '#FFE08A'], mov: 'flutua', brilho: '#B387FF' },
+    cyber: { forma: 'digito', cores: ['#39FF88', '#00C853'], mov: 'cai', brilho: '#39FF88' },
+    blood: { forma: 'gota', cores: ['#C62828', '#8E0000'], mov: 'cai' },
+    candy: { forma: 'confete', cores: ['#FF9CCB', '#9BE7FF', '#FFE08A', '#C7A8F0'], mov: 'flutua', brilho: '#FF9CCB' },
+    glitch: { forma: 'pixel', cores: ['#00FFFF', '#FF00FF'], mov: 'faisca', brilho: '#FF00FF' },
+    holy: { forma: 'brilho', cores: ['#FFFFFF', '#FFF3C4'], mov: 'sobe', brilho: '#FFF3C4' },
+    cursed: { forma: 'chama', cores: ['#39FF88', '#00A86B'], mov: 'sobe', brilho: '#39FF88' },
+    diamond: { forma: 'brilho', cores: ['#CFF4FF', '#FFFFFF'], mov: 'flutua', brilho: '#CFF4FF' },
+    bubble: { forma: 'bolha', cores: ['#9BE7FF', '#CFF4FF'], mov: 'sobe' },
+    sand: { forma: 'circulo', cores: ['#E6C88A', '#C9A56B'], mov: 'flutua' },
+    smoke: { forma: 'fumaca', cores: ['#8A8A9A', '#5A5A6A'], mov: 'sobe' },
+    plasma: { forma: 'faisca', cores: ['#FF4FD8', '#7C4DFF'], mov: 'faisca', brilho: '#B387FF' }
+};
+
+// Cada item: id único (salvo no localStorage), valor (o que o desenho usa), nome, descrição, preço
+const PELAGENS = [
+    { id: 'pel_nenhuma', valor: 'nenhuma', name: 'Lisa', desc: 'Sem estampa', cost: 0 },
+    { id: 'pel_bolinhas', valor: 'bolinhas', name: 'Dálmata', desc: 'Bolinhas pretas', cost: 6000 },
+    { id: 'pel_coracoes', valor: 'coracoes', name: 'Coraçõezinhos', desc: 'Estampa de amor', cost: 7000 },
+    { id: 'pel_listras', valor: 'listras', name: 'Zebra', desc: 'Listras onduladas', cost: 8000 },
+    { id: 'pel_oncinha', valor: 'oncinha', name: 'Oncinha', desc: 'Pintas de onça', cost: 9000 },
+    { id: 'pel_estrelas', valor: 'estrelas', name: 'Estrelado', desc: 'Estrelinhas douradas', cost: 10000 },
+    { id: 'pel_arcoiris', valor: 'arcoiris', name: 'Arco-Íris', desc: 'Faixas coloridas', cost: 15000 },
+    { id: 'pel_cromado', valor: 'cromado', name: 'Cromado', desc: 'Metal com reflexo passando', cost: 20000 },
+    { id: 'pel_galaxia', valor: 'galaxia', name: 'Galáxia', desc: 'Um céu estrelado no corpo', cost: 25000 }
+];
+const RASTROS = [
+    { id: 'ras_arcoiris', valor: 'arcoiris', name: 'Fita Arco-Íris', desc: 'Nas cores da crina', cost: 0 },
+    { id: 'ras_nenhum', valor: 'nenhum', name: 'Sem Rastro', desc: 'Discreto', cost: 0 },
+    { id: 'ras_coracoes', valor: 'coracoes', name: 'Corações', desc: 'Deixa amor pelo caminho', cost: 5000 },
+    { id: 'ras_estrelas', valor: 'estrelas', name: 'Estrelas', desc: 'Pó de estrela dourado', cost: 6000 },
+    { id: 'ras_bolhas', valor: 'bolhas', name: 'Bolhas', desc: 'Bolhas de sabão', cost: 6000 },
+    { id: 'ras_petalas', valor: 'petalas', name: 'Pétalas', desc: 'Chuva de cerejeira', cost: 8000 },
+    { id: 'ras_notas', valor: 'notas', name: 'Notas Musicais', desc: 'Corre no ritmo', cost: 9000 },
+    { id: 'ras_chamas', valor: 'chamas', name: 'Chamas', desc: 'Pegando fogo', cost: 12000 },
+    { id: 'ras_raio', valor: 'raio', name: 'Raio', desc: 'Velocidade elétrica', cost: 15000 }
+];
+const CHIFRES = [
+    { id: 'chi_dourado', valor: 'dourado', name: 'Dourado', desc: 'O clássico', cost: 0 },
+    { id: 'chi_rosa', valor: 'rosa', name: 'Pérola Rosa', desc: 'Delicado e brilhante', cost: 4000 },
+    { id: 'chi_gelo', valor: 'gelo', name: 'Gelo', desc: 'Frio que brilha', cost: 6000 },
+    { id: 'chi_cristal', valor: 'cristal', name: 'Cristal', desc: 'Transparente como vidro', cost: 8000 },
+    { id: 'chi_chocolate', valor: 'chocolate', name: 'Chocolate', desc: 'Com granulado!', cost: 9000 },
+    { id: 'chi_neon', valor: 'neon', name: 'Neon', desc: 'Acende no escuro', cost: 12000 },
+    { id: 'chi_arcoiris', valor: 'arcoiris', name: 'Arco-Íris', desc: 'Espiral colorida', cost: 15000 },
+    { id: 'chi_estelar', valor: 'estelar', name: 'Estelar', desc: 'Feito de noite', cost: 18000 }
+];
+const CHAPEUS = [
+    { id: 'cha_nenhum', valor: 'nenhum', name: 'Nenhum', desc: 'Usa o acessório do personagem', cost: 0 },
+    { id: 'cha_laco', valor: 'laco', name: 'Laçarote', desc: 'Um laço enorme', cost: 4000 },
+    { id: 'cha_flores', valor: 'flores', name: 'Coroa de Flores', desc: 'Primavera o ano todo', cost: 6000 },
+    { id: 'cha_festa', valor: 'festa', name: 'Chapéu de Festa', desc: 'Todo dia é aniversário', cost: 6000 },
+    { id: 'cha_orelhasGato', valor: 'orelhasGato', name: 'Tiara de Gatinho', desc: 'Miau!', cost: 7000 },
+    { id: 'cha_oculosCoracao', valor: 'oculosCoracao', name: 'Óculos de Coração', desc: 'Apaixonado pela corrida', cost: 8000 },
+    { id: 'cha_fones', valor: 'fones', name: 'Fones de Ouvido', desc: 'Correndo com música', cost: 10000 },
+    { id: 'cha_gorro', valor: 'gorro', name: 'Gorro de Natal', desc: 'Ho ho ho!', cost: 10000 },
+    { id: 'cha_cartola', valor: 'cartola', name: 'Cartola', desc: 'Elegância mágica', cost: 14000 }
+];
+const CATEGORIAS_VISUAL = [
+    { id: 'aura', nome: '✨ Auras', itens: () => skins },
+    { id: 'pelagem', nome: '🎨 Pelagens', itens: () => PELAGENS },
+    { id: 'rastro', nome: '🌈 Rastros', itens: () => RASTROS },
+    { id: 'chifre', nome: '🦄 Chifres', itens: () => CHIFRES },
+    { id: 'chapeu', nome: '🎩 Chapéus', itens: () => CHAPEUS }
+];
+
+// O que está equipado (ids). A aura continua em selectedSkin (compatível com o save antigo).
+const VISUAL_PADRAO = { pelagem: 'pel_nenhuma', rastro: 'ras_arcoiris', chifre: 'chi_dourado', chapeu: 'cha_nenhum' };
+let visualEquipado = { ...VISUAL_PADRAO, ...(JSON.parse(localStorage.getItem('uniparkourVisual')) || {}) };
+let abaVisual = 'pelagem';
+
+const itemPorId = (cat, id) => CATEGORIAS_VISUAL.find(c => c.id === cat).itens().find(i => i.id === id);
+const possuiVisual = (item) => item.cost === 0 || unlockedSkins.includes(item.id);
+const equipadoNaCategoria = (cat) => cat === 'aura' ? selectedSkin : visualEquipado[cat];
+
+// Converte os ids equipados nos valores que o desenho do personagem usa (p.visual)
+function visualParaDesenho(equip = visualEquipado) {
+    const v = {};
+    for (const cat of ['pelagem', 'rastro', 'chifre', 'chapeu']) {
+        const item = itemPorId(cat, equip[cat]) || itemPorId(cat, VISUAL_PADRAO[cat]);
+        v[cat] = item.valor;
     }
+    return v;
+}
+
+function escolherVisual(cat, item) {
+    const equipar = () => {
+        if (cat === 'aura') { selectedSkin = item.id; localStorage.setItem('uniparkourActiveSkin', selectedSkin); }
+        else { visualEquipado[cat] = item.id; localStorage.setItem('uniparkourVisual', JSON.stringify(visualEquipado)); }
+    };
+    if (possuiVisual(item)) {
+        equipar();
+        playSound('jump');
+    } else if (globalStars < item.cost) {
+        alert('Estrelas insuficientes!');
+        return;
+    } else if (confirm(`Desbloquear ${item.name} por ${item.cost} estrelas?`)) {
+        globalStars -= item.cost;
+        unlockedSkins.push(item.id);
+        localStorage.setItem('uniparkourGlobalStars', globalStars);
+        localStorage.setItem('uniparkourSkins', JSON.stringify(unlockedSkins));
+        equipar();
+        updateGlobalStarsDisplay();
+        playSound('buy');
+    } else return;
+    renderCharMenu();
+}
+
+// Desenha uma "partícula" de qualquer forma (usado no jogo e na prévia da loja)
+function desenharFormaParticula(ctx, forma, cor, x, y, tam, rot = 0, texto = '1') {
+    if (forma === 'brilho') { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(spriteEstrelinha(cor), -tam / 2, -tam / 2, tam, tam); ctx.restore(); }
+    else if (forma === 'fumaca' || forma === 'poeira') ctx.drawImage(spritePoeira(cor), x - tam / 2, y - tam / 2, tam, tam);
+    else if (forma === 'confete' || forma === 'pixel') {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(forma === 'pixel' ? 0 : rot);
+        ctx.fillStyle = cor; ctx.fillRect(-tam * 0.25, -tam * (forma === 'pixel' ? 0.25 : 0.12), tam * 0.5, tam * (forma === 'pixel' ? 0.5 : 0.24));
+        ctx.restore();
+    } else if (forma === 'digito') {
+        ctx.font = `700 ${Math.round(tam * 0.8)}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = cor; ctx.fillText(texto, x, y);
+    } else if (forma === 'faisca') {
+        ctx.strokeStyle = cor; ctx.lineWidth = Math.max(1, tam * 0.12); ctx.lineJoin = 'miter';
+        ctx.beginPath();
+        let px = x, py = y;
+        ctx.moveTo(px, py);
+        for (let i = 0; i < 3; i++) { px += Math.cos(rot) * tam * 0.3 + (i % 2 ? 1 : -1) * tam * 0.15; py += Math.sin(rot) * tam * 0.3; ctx.lineTo(px, py); }
+        ctx.stroke();
+    } else if (forma === 'circulo') { ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(x, y, tam * 0.25, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(spriteForma(forma, cor), -tam / 2, -tam / 2, tam, tam); ctx.restore(); }
+}
+
+// Solta partículas da aura equipada em volta do jogador (chamado a cada passo de física)
+function emitirAura(efeito) {
+    if (!efeito || frames % 4 !== 0) return;
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2, cor = efeito.cores[Math.floor(Math.random() * efeito.cores.length)];
+    const base = { forma: efeito.forma, color: cor, life: 1, size: 5 + Math.random() * 3, texto: Math.random() < 0.5 ? '0' : '1' };
+    if (efeito.mov === 'sobe') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w, y: cy + player.h * 0.3, vx: (Math.random() - 0.5) * 0.6, vy: -1.5 - Math.random() * 1.5, noMundo: true });
+    else if (efeito.mov === 'cai') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w * 1.6, y: cy - player.h * 1.2, vx: (Math.random() - 0.5) * 0.6, vy: 1 + Math.random(), noMundo: true });
+    else if (efeito.mov === 'faisca') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w, y: cy + (Math.random() - 0.5) * player.h, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 0.5 });
+    else Object.assign(base, { x: cx, y: cy, vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3 });
+    if (base.forma === 'fumaca') base.size = 8 + Math.random() * 4;
+    emitirParticula(base);
+}
+
+// Abas + cards com prévia ao vivo do personagem usando o item
+function renderVisual() {
+    const abas = document.getElementById('abas-visual');
+    abas.innerHTML = '';
+    CATEGORIAS_VISUAL.forEach(cat => {
+        const b = document.createElement('button');
+        b.className = 'aba-visual' + (cat.id === abaVisual ? ' ativa' : '');
+        b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', cat.id === abaVisual);
+        b.textContent = cat.nome;
+        b.onclick = () => { abaVisual = cat.id; renderCharMenu(); };
+        abas.appendChild(b);
+    });
+    skinsGrid.innerHTML = '';
+    const cat = CATEGORIAS_VISUAL.find(c => c.id === abaVisual);
+    // chifre só aparece em unicórnio: a prévia usa o Padrão se o personagem escolhido não tiver chifre
+    const charPrevia = (abaVisual === 'chifre' && especieDe(characters[selectedChar]).chifre !== 'unicornio') ? characters[0] : characters[selectedChar];
+    cat.itens().forEach(item => {
+        const tem = possuiVisual(item), equipado = equipadoNaCategoria(abaVisual) === item.id;
+        const card = document.createElement('div');
+        card.className = `char-card ${equipado ? 'selected' : ''} ${tem ? '' : 'bloqueado'}`;
+        card.onclick = () => escolherVisual(abaVisual, item);
+        const retrato = document.createElement('canvas');
+        retrato.className = 'retrato';
+        const equipPrevia = { ...visualEquipado };
+        if (abaVisual !== 'aura') equipPrevia[abaVisual] = item.id;
+        const extra = abaVisual === 'aura' ? { aura: AURA_EFEITO[item.id] || null } : abaVisual === 'rastro' ? { rastro: true } : {};
+        retratosPendentes.push([retrato, charPrevia, visualParaDesenho(equipPrevia), extra]);
+        card.innerHTML = `<div class="char-name">${item.name}</div><div class="char-desc">${item.desc}</div>` +
+            `<div style="font-weight:bold; white-space:nowrap; color:${tem ? '#9BE7FF' : '#FFE08A'}">${tem ? (equipado ? 'EQUIPADO' : 'USAR') : '🔒 ' + item.cost + ' ⭐'}</div>`;
+        card.insertBefore(retrato, card.firstChild);
+        skinsGrid.appendChild(card);
+    });
 }
 
 // Retrato de verdade de cada personagem na loja (o mesmo desenho do jogo, parado no meio da passada).
 // Só desenha depois que o jogo terminou de carregar (as funções de pose ficam mais abaixo no arquivo).
 var retratosLiberados = false;
 const retratosPendentes = [];
-function desenharRetrato(cv, char) {
+function desenharRetrato(cv, char, visual, extra = {}) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     cv.width = 140 * dpr; cv.height = 104 * dpr;
     const g = cv.getContext('2d');
@@ -1053,13 +1221,39 @@ function desenharRetrato(cv, char) {
     const p = {
         char, w: 50, h: 40, rot: 0, spin: 0, scaleX: 1, scaleY: 1, vy: 0, onGround: true, mistura: 0,
         runPhase: 0.12 / FATOR_FASE_GALOPE, poseAr: { fl: -35, fr: -15, bl: 25, br: 5 },
-        hurtFrames: 0, sorriso: 1, piscar: 100, assustado: false
+        hurtFrames: 0, sorriso: 1, piscar: 100, assustado: false,
+        visual: visual || visualParaDesenho(), x: 55, y: 58
     };
+    // prévia da aura: brilho + algumas partículas espalhadas em volta
+    if (extra.aura) {
+        const ef = extra.aura;
+        if (ef.brilho) {
+            g.save(); g.globalCompositeOperation = 'lighter';
+            g.drawImage(spriteLuz(ef.brilho), 55 - 75, 58 - 70, 150, 140);
+            g.restore();
+        }
+        const pos = [[18, 30], [96, 22], [30, 88], [100, 80], [62, 14], [12, 62], [108, 52], [80, 98]];
+        pos.forEach(([x, y], i) => {
+            g.save();
+            if (ef.forma === 'brilho' || ef.forma === 'faisca') g.globalCompositeOperation = 'lighter';
+            desenharFormaParticula(g, ef.forma, ef.cores[i % ef.cores.length], x, y, ef.forma === 'fumaca' ? 22 : 13, i * 0.9, i % 2 ? '1' : '0');
+            g.restore();
+        });
+    }
+    // prévia do rastro: um caminho ondulado saindo da cauda para a esquerda
+    if (extra.rastro) {
+        const raiz = pontoLocalNaTela(p, RAIZ_CAUDA[0], RAIZ_CAUDA[1], 1.3);
+        p.rastro = [];
+        for (let i = 0; i < 14; i++) p.rastro.push({ x: raiz.x - i * 6, y: raiz.y + Math.sin(i * 0.6) * 5 + i * 0.6 });
+        p.alfaFita = 1; p.onGround = false;
+        desenharRastro(g, p, 0, 8, paletaDe(char), 0.3);
+        p.onGround = true;
+    }
     desenharUnicornio(g, 55, 58, p, 0.3, 1.3);   // enquadrado para a cabeça maior
 }
 function desenharRetratosPendentes() {
     if (!retratosLiberados) return;
-    while (retratosPendentes.length) { const [cv, char] = retratosPendentes.shift(); desenharRetrato(cv, char); }
+    while (retratosPendentes.length) { const [cv, char, visual, extra] = retratosPendentes.shift(); desenharRetrato(cv, char, visual, extra); }
 }
 
 function renderCharMenu() {
@@ -1079,7 +1273,6 @@ function renderCharMenu() {
         card.insertBefore(retrato, card.firstChild);
         charGrid.appendChild(card);
     });
-    desenharRetratosPendentes();
 
     upgradesGrid.innerHTML = '';
     upgrades.forEach(u => {
@@ -1099,23 +1292,8 @@ function renderCharMenu() {
         upgradesGrid.appendChild(card);
     });
 
-    skinsGrid.innerHTML = '';
-    skins.forEach(s => {
-        const isUnlocked = unlockedSkins.includes(s.id);
-        const card = document.createElement('div');
-        card.className = `char-card ${s.id === selectedSkin ? 'selected' : ''}`;
-        card.onclick = () => buySkin(s.id);
-
-        let visual = s.type !== 'none' ? `<div style="width:40px; height:40px; margin:0 auto 10px; border-radius:50%; background:linear-gradient(45deg, ${s.colors[0]}, ${s.colors[1]}); border: 2px solid #fff; box-shadow: 0 0 10px ${s.colors[0]}"></div>` : '<div style="font-size:2rem; margin-bottom:10px;">🦄</div>';
-
-        card.innerHTML = `
-            ${visual}
-            <div class="char-name">${s.name}</div>
-            <div class="char-desc">${s.desc}</div>
-            <div style="margin-top:10px; font-weight:bold; color:${isUnlocked ? '#9BE7FF' : '#FFE08A'}">${isUnlocked ? (s.id === selectedSkin ? 'EQUIPADO' : 'USAR') : s.cost + ' ⭐'}</div>
-        `;
-        skinsGrid.appendChild(card);
-    });
+    renderVisual();
+    desenharRetratosPendentes();
 }
 renderCharMenu();
 
@@ -1199,6 +1377,7 @@ function initGame() {
         jumps: 0,
         onGround: false,
         char: selectedCharObj,
+        visual: visualParaDesenho(),   // pelagem, rastro, chifre e chapéu escolhidos na loja
         spin: 0,
         scaleX: 1, scaleY: 1,
         // Atributos do personagem
@@ -3328,17 +3507,8 @@ function step() {
             size: Math.random() * 8 + 4
         });
     }
-    // Partículas da aura (antes eram criadas dentro do render)
-    if (selectedSkin !== 'default' && frames % 4 === 0) {
-        const auraConfig = skins.find(s => s.id === selectedSkin);
-        if (auraConfig && auraConfig.colors) {
-            emitirParticula({
-                x: player.x + player.w / 2, y: player.y + player.h / 2,
-                vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4,
-                life: 1, color: Math.random() > 0.5 ? auraConfig.colors[0] : auraConfig.colors[1], size: 4
-            });
-        }
-    }
+    // Partículas da aura: cada aura tem a sua forma e o seu movimento (AURA_EFEITO)
+    if (selectedSkin !== 'default') emitirAura(AURA_EFEITO[selectedSkin]);
 
     atualizarParticulas(effectiveSpeed);   // poeira no chão rola junto com o mundo
 
@@ -3364,6 +3534,7 @@ function emitirParticula(o) {
     s.color = o.color || '#ffffff'; s.size = o.size || 3;
     s.forma = o.forma || 'circulo'; s.gravidade = o.gravidade || 0;
     s.rot = Math.random() * Math.PI; s.vr = (Math.random() - 0.5) * 0.3;
+    s.texto = o.texto || '1';
 }
 
 function limparParticulas() {
@@ -3421,14 +3592,17 @@ const py = (p) => p.yAnt + (p.y - p.yAnt) * alfaRender;
 
 function desenharParticulas(ctx) {
     ctx.save();
-    // 1) círculos e poeira (normal)
+    // 1) círculos, poeira e as formas das auras (normal)
     for (const pt of poolParticulas) {
-        if (!pt.ativa || pt.forma === 'brilho') continue;
+        if (!pt.ativa || pt.forma === 'brilho' || pt.forma === 'faisca') continue;
         const k = Math.max(0, pt.life / pt.vida0);
-        if (pt.forma === 'poeira') {
+        if (pt.forma === 'poeira' || pt.forma === 'fumaca') {
             const t = pt.size * (1 + (1 - k) * 1.6);
             ctx.globalAlpha = k * 0.7;
             ctx.drawImage(spritePoeira(pt.color), px(pt) - t, py(pt) - t, t * 2, t * 2);
+        } else if (pt.forma !== 'circulo') {
+            ctx.globalAlpha = Math.min(1, k * 1.5);
+            desenharFormaParticula(ctx, pt.forma, pt.color, px(pt), py(pt), pt.size * 2.4, pt.rot, pt.texto);
         } else {
             ctx.globalAlpha = Math.min(1, pt.life);
             ctx.fillStyle = pt.color;
@@ -3438,8 +3612,13 @@ function desenharParticulas(ctx) {
     // 2) brilhos (modo lighter)
     ctx.globalCompositeOperation = 'lighter';
     for (const pt of poolParticulas) {
-        if (!pt.ativa || pt.forma !== 'brilho') continue;
+        if (!pt.ativa || (pt.forma !== 'brilho' && pt.forma !== 'faisca')) continue;
         const k = Math.max(0, pt.life / pt.vida0);
+        if (pt.forma === 'faisca') {
+            ctx.globalAlpha = Math.min(1, k * 1.6);
+            desenharFormaParticula(ctx, 'faisca', pt.color, px(pt), py(pt), pt.size * 2.4, pt.rot);
+            continue;
+        }
         const t = pt.size * 2.4 * (0.4 + 0.6 * k);
         ctx.globalAlpha = Math.min(1, k * 1.4);
         ctx.save();
@@ -4346,12 +4525,12 @@ function render() {
 
     // ── AURAS & SKINS ──
     if (selectedSkin !== 'default') {
-        const auraConfig = skins.find(s => s.id === selectedSkin);
-        if (auraConfig && auraConfig.colors) {
+        const efeito = AURA_EFEITO[selectedSkin];
+        if (efeito && efeito.brilho) {   // auras escuras (sombra, vazio, fumaça) não brilham
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             const aSize = Math.max(player.w, player.h) * 3;
-            ctx.drawImage(spriteLuz(auraConfig.colors[0]), cx - aSize / 2, cy - aSize / 2, aSize, aSize);
+            ctx.drawImage(spriteLuz(efeito.brilho), cx - aSize / 2, cy - aSize / 2, aSize, aSize);
             ctx.restore();
         }
     }

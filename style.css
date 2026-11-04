@@ -534,6 +534,18 @@ canvas {
 canvas.retrato { position: static; width: 140px; height: 104px; display: block; margin: 0 auto; }
 .character-grid { padding-bottom: 10px; }   /* o preço do último card não fica cortado */
 
+/* Abas do visual do personagem (auras, pelagens, rastros, chifres, chapéus) */
+.abas-visual { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+.aba-visual {
+    font: inherit; font-weight: 600; font-size: 0.95rem; cursor: pointer;
+    color: #D9CCF2; background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(185, 164, 255, 0.3); border-radius: 999px; padding: 6px 14px;
+}
+.aba-visual:hover { background: rgba(185, 164, 255, 0.18); color: #FFF6E8; }
+.aba-visual:focus-visible { outline: 2px solid #9BE7FF; outline-offset: 2px; }
+.aba-visual.ativa { color: #2A1450; background: #FFE08A; border-color: #FFE08A; }
+@media (max-width: 600px) { .aba-visual { font-size: 0.85rem; padding: 5px 10px; } }
+
 /* Placar */
 #leaderboard-list { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(185, 164, 255, 0.3); }
 .lb-row { border-bottom-color: rgba(185, 164, 255, 0.2); }
