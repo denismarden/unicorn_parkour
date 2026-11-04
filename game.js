@@ -652,7 +652,7 @@ function renderLeaderboard() {
         const nome = span('lb-name', String(entry.name).slice(0, 20));
         if (entry.charName) {
             const c = span('lb-char', ` (${String(entry.charName).slice(0, 20)} — Fase ${parseInt(entry.phase) || 1})`);
-            c.style.cssText = 'color:#00f0ff;font-size:0.85em;margin-left:5px;';
+            c.style.cssText = 'font-size:0.85em;margin-left:5px;';   // cor vem do style.css (.lb-char)
             nome.appendChild(c);
         }
         div.append(span('lb-rank', badge), nome, span('lb-score', `${Number(entry.score).toLocaleString()} pts`));
@@ -661,7 +661,7 @@ function renderLeaderboard() {
 
     if (_firebaseAvailable) {
         const note = document.createElement('p');
-        note.style.cssText = 'text-align:center;color:#555;font-size:0.75rem;margin-top:12px;';
+        note.style.cssText = 'text-align:center;color:#B9A4FF;font-size:0.75rem;margin-top:12px;';
         note.textContent = '🌐 Placar global — compartilhado entre todos os jogadores';
         list.appendChild(note);
     }
@@ -860,18 +860,11 @@ updateGlobalStarsDisplay();
 
 function showToast(msg) {
     let t = document.createElement('div');
+    t.className = 'toast';   // visual no style.css
     t.innerText = msg;
-    t.style.background = '#ffdd00';
-    t.style.color = '#000';
-    t.style.padding = '10px 20px';
-    t.style.borderRadius = '5px';
-    t.style.fontWeight = 'bold';
-    t.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)';
-    t.style.animation = 'slideDown 0.3s ease-out';
     toastContainer.appendChild(t);
     setTimeout(() => {
         t.style.opacity = '0';
-        t.style.transition = 'opacity 0.5s';
         setTimeout(() => t.remove(), 500);
     }, 3000);
 }
@@ -1069,25 +1062,45 @@ function buySkin(id) {
     }
 }
 
+// Retrato de verdade de cada personagem na loja (o mesmo desenho do jogo, parado no meio da passada).
+// Só desenha depois que o jogo terminou de carregar (as funções de pose ficam mais abaixo no arquivo).
+var retratosLiberados = false;
+const retratosPendentes = [];
+function desenharRetrato(cv, char) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = 120 * dpr; cv.height = 90 * dpr;
+    const g = cv.getContext('2d');
+    g.setTransform(dpr * 0.82, 0, 0, dpr * 0.82, 0, 0);
+    const p = {
+        char, w: 50, h: 40, rot: 0, spin: 0, scaleX: 1, scaleY: 1, vy: 0, onGround: true, mistura: 0,
+        runPhase: 0.12 / FATOR_FASE_GALOPE, poseAr: { fl: -35, fr: -15, bl: 25, br: 5 },
+        hurtFrames: 0, sorriso: 1, piscar: 100, assustado: false
+    };
+    desenharUnicornio(g, 45, 52, p, 0.3, 1.3);
+}
+function desenharRetratosPendentes() {
+    if (!retratosLiberados) return;
+    while (retratosPendentes.length) { const [cv, char] = retratosPendentes.shift(); desenharRetrato(cv, char); }
+}
+
 function renderCharMenu() {
     charGrid.innerHTML = '';
+    retratosPendentes.length = 0;
     characters.forEach(char => {
         const card = document.createElement('div');
-        card.className = `char-card ${char.id === selectedChar ? 'selected' : ''}`;
-        card.onclick = () => selecionarPersonagem(char);
         const liberado = unlockedChars.includes(char.id);
-        if (!liberado) card.style.opacity = '0.75';
-        const preview = document.createElement('div'); preview.className = 'char-color-preview'; preview.style.backgroundColor = char.body;
-        const mane = document.createElement('div');
-        mane.style.position = 'absolute'; mane.style.top = '-5px'; mane.style.right = '-15px'; mane.style.width = '70px'; mane.style.height = '40px';
-        mane.style.background = `linear-gradient(135deg, ${char.mane[0]}, ${char.mane[1]})`; mane.style.transform = 'rotate(45deg)';
-        preview.appendChild(mane);
+        card.className = `char-card ${char.id === selectedChar ? 'selected' : ''} ${liberado ? '' : 'bloqueado'}`;
+        card.onclick = () => selecionarPersonagem(char);
+        const retrato = document.createElement('canvas');
+        retrato.className = 'retrato';
+        retratosPendentes.push([retrato, char]);
 
         card.innerHTML += `<div class="char-name">${char.name}</div><div class="char-desc">${char.desc}</div>` +
-            `<div style="font-weight:bold; white-space:nowrap; color:${liberado ? '#00f0ff' : '#ffdd00'}">${liberado ? (char.id === selectedChar ? 'EQUIPADO' : 'USAR') : '🔒 ' + char.cost + ' ⭐'}</div>`;
-        card.insertBefore(preview, card.firstChild);
+            `<div style="font-weight:bold; white-space:nowrap; color:${liberado ? '#9BE7FF' : '#FFE08A'}">${liberado ? (char.id === selectedChar ? 'EQUIPADO' : 'USAR') : '🔒 ' + char.cost + ' ⭐'}</div>`;
+        card.insertBefore(retrato, card.firstChild);
         charGrid.appendChild(card);
     });
+    desenharRetratosPendentes();
 
     upgradesGrid.innerHTML = '';
     upgrades.forEach(u => {
@@ -1102,7 +1115,7 @@ function renderCharMenu() {
             <div style="font-size:2rem; margin-bottom:10px;">${isMax ? '⭐' : '⚡'}</div>
             <div class="char-name">${u.name} (Nvl ${cur}/${u.maxLevel})</div>
             <div class="char-desc">${u.desc}</div>
-            <div style="margin-top:10px; font-weight:bold; color:${isMax ? '#00ff00' : '#ffdd00'}">${isMax ? 'MÁXIMO' : price + ' ⭐'}</div>
+            <div style="margin-top:10px; font-weight:bold; color:${isMax ? '#9BE7FF' : '#FFE08A'}">${isMax ? 'MÁXIMO' : price + ' ⭐'}</div>
         `;
         upgradesGrid.appendChild(card);
     });
@@ -1120,7 +1133,7 @@ function renderCharMenu() {
             ${visual}
             <div class="char-name">${s.name}</div>
             <div class="char-desc">${s.desc}</div>
-            <div style="margin-top:10px; font-weight:bold; color:${isUnlocked ? '#00f0ff' : '#ffdd00'}">${isUnlocked ? (s.id === selectedSkin ? 'EQUIPADO' : 'USAR') : s.cost + ' ⭐'}</div>
+            <div style="margin-top:10px; font-weight:bold; color:${isUnlocked ? '#9BE7FF' : '#FFE08A'}">${isUnlocked ? (s.id === selectedSkin ? 'EQUIPADO' : 'USAR') : s.cost + ' ⭐'}</div>
         `;
         skinsGrid.appendChild(card);
     });
@@ -4121,6 +4134,14 @@ function desenharSombraJogador() {
     ctx.restore();
 }
 
+// Escala da interface desenhada no canvas: no celular a resolução lógica (900) é maior que a tela,
+// então textos e pílulas precisam crescer para continuar legíveis
+function escalaUI() {
+    const larguraCss = gameContainer.clientWidth || cw;
+    return Math.max(1, cw / larguraCss);
+}
+const telaEstreita = () => (gameContainer.clientWidth || cw) < 600;
+
 // Texto com contorno (sem shadowBlur)
 function textoContornado(ctx, txt, x, y, cor, contorno, larguraContorno) {
     ctx.lineJoin = 'round';
@@ -4191,10 +4212,10 @@ function render() {
 
     // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
     if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed);
-    if (player.char.id === 20) { drawDragon(ctx, player); }
+    if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, frames * PASSO_FISICA, 1.3); }
+    else if (player.char.id === 20) { drawDragon(ctx, player); }   // desenhos antigos (só para comparar)
     else if (player.char.id === 21) { drawCat(ctx, player); }
     else if (player.char.id === 22) { drawRabbit(ctx, player); }
-    else if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, frames * PASSO_FISICA, 1.3); }
     else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
 
@@ -4214,33 +4235,37 @@ function render() {
         ctx.fillStyle = bannerGrad;
         ctx.fillRect(0, ch / 2 - bh / 2, cw, bh);
         ctx.textAlign = 'center';
-        ctx.font = `600 15px ${FONTE_JOGO}`;
-        textoContornado(ctx, `FASE ${currentPhase + 1} DE ${PHASES.length}`, cw / 2, ch / 2 - 16, ph.platform.edge, PALETA.textoContorno, 4);
-        ctx.font = `700 34px ${FONTE_JOGO}`;
-        textoContornado(ctx, ph.name, cw / 2, ch / 2 + 20, PALETA.texto, PALETA.textoContorno, 6);
+        // a faixa cresce no celular para o texto continuar legível
+        const k = escalaUI();
+        ctx.font = `600 ${15 * k}px ${FONTE_JOGO}`;
+        textoContornado(ctx, `FASE ${currentPhase + 1} DE ${PHASES.length}`, cw / 2, ch / 2 - 16 * k, ph.platform.edge, PALETA.textoContorno, 4 * k);
+        ctx.font = `700 ${Math.min(34 * k, cw / (ph.name.length * 0.62))}px ${FONTE_JOGO}`;
+        textoContornado(ctx, ph.name, cw / 2, ch / 2 + 20 * k, PALETA.texto, PALETA.textoContorno, 6 * k);
         ctx.restore();
     }
 
-    // ── INDICADOR DE FASE (pílula no topo, centro) ──
+    // ── INDICADOR DE FASE (pílula no topo, centro; no celular fica logo abaixo do placar) ──
     ctx.save();
-    ctx.font = `600 15px ${FONTE_JOGO}`;
+    const kUI = escalaUI();
+    ctx.font = `600 ${15 * kUI}px ${FONTE_JOGO}`;
     ctx.textAlign = 'center';
-    const rotulo = `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`;
-    const larg = ctx.measureText(rotulo).width + 28;
+    const rotulo = telaEstreita() ? `✦ Fase ${currentPhase + 1}/${PHASES.length} ✦` : `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`;
+    const larg = ctx.measureText(rotulo).width + 28 * kUI;
+    const yPilula = (telaEstreita() ? 52 : 54) * kUI;
     ctx.fillStyle = 'rgba(20,10,50,0.55)';
-    ctx.strokeStyle = rgbaDe(ph.platform.edge, 0.6); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(cw / 2 - larg / 2, 54, larg, 28, 14); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = rgbaDe(ph.platform.edge, 0.6); ctx.lineWidth = 1.5 * kUI;
+    ctx.beginPath(); ctx.roundRect(cw / 2 - larg / 2, yPilula, larg, 28 * kUI, 14 * kUI); ctx.fill(); ctx.stroke();
     ctx.fillStyle = PALETA.texto;
-    ctx.fillText(rotulo, cw / 2, 73);
+    ctx.fillText(rotulo, cw / 2, yPilula + 19 * kUI);
     ctx.restore();
 
     // ── TEXTOS FLUTUANTES (com contorno, sem shadowBlur) ──
     ctx.save();
-    ctx.font = `700 24px ${FONTE_JOGO}`;
+    ctx.font = `700 ${24 * kUI}px ${FONTE_JOGO}`;
     ctx.textAlign = 'center';
     for (let ft of floatingTexts) {
         ctx.globalAlpha = Math.max(0, ft.life);
-        textoContornado(ctx, ft.text, ft.x, ft.y, PALETA.texto, ft.color, 5);
+        textoContornado(ctx, ft.text, ft.x, ft.y, PALETA.texto, ft.color, 5 * kUI);
     }
     ctx.restore();
 
@@ -4288,3 +4313,7 @@ function iniciarLoopMenu() {
     if (rafMenu === null) rafMenu = requestAnimationFrame(loopMenu);
 }
 iniciarLoopMenu();
+
+// Tudo carregado: agora os retratos da loja podem ser desenhados
+retratosLiberados = true;
+desenharRetratosPendentes();

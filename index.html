@@ -25,22 +25,22 @@
             <h1 class="title titulo-animado">Unicorn Parkour</h1>
             <p class="subtitle">Salte, desvie e colete estrelas!</p>
             <p class="dica-inicio">✨ Aperte Espaço ou toque em Jogar ✨</p>
-            <div style="font-size:1.2rem; margin-bottom:15px; color:#ffdd00; font-weight:bold; text-shadow:0 0 10px #ffdd00;">
+            <div class="carteira">
                 🌟 Estrelas: <span id="global-stars-display">0</span>
             </div>
             <button id="btn-start" class="btn primary">Jogar Agora</button>
             <button id="btn-characters" class="btn secondary">Loja & Personagens</button>
             <button id="btn-leaderboard" class="btn secondary">Placar de Líderes</button>
             
-            <div id="missions-panel" style="background:rgba(0,0,0,0.5); border: 1px solid #3366cc; padding:10px; border-radius:8px; margin-top:20px; text-align:left;">
-                <h3 style="margin:0 0 5px 0; color:#00f0ff; font-size:1.1rem; text-align:center;">🎯 Missão Diária</h3>
-                <div id="mission-desc" style="font-size:0.9rem; text-align:center;">---</div>
-                <div style="background:#222; border-radius:4px; height:12px; margin-top:8px; overflow:hidden; border: 1px solid #444;">
-                    <div id="mission-progress-bar" style="background:linear-gradient(90deg, #00f0ff, #00ff88); height:100%; width:0%; transition: width 0.3s;"></div>
+            <div id="missions-panel" class="painel-missao">
+                <h3 class="missao-titulo">🎯 Missão Diária</h3>
+                <div id="mission-desc" class="missao-desc">---</div>
+                <div class="missao-trilho">
+                    <div id="mission-progress-bar" class="missao-barra"></div>
                 </div>
-                <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:0.8rem;">
+                <div class="missao-rodape">
                     <span id="mission-progress-text">0 / 0</span>
-                    <span id="mission-reward" style="color:#ffdd00; font-weight:bold;">🎁 +0</span>
+                    <span id="mission-reward" class="missao-premio">🎁 +0</span>
                 </div>
             </div>
         </div>
@@ -49,21 +49,21 @@
         <div id="character-menu" class="ui-panel hidden" style="max-height: 80vh; overflow-y: auto;">
             <h2>Loja e Personagens</h2>
             
-            <div style="font-size:1.2rem; margin-bottom:15px; color:#ffdd00; font-weight:bold; text-shadow:0 0 10px #ffdd00;">
+            <div class="carteira">
                 🌟 Suas Estrelas: <span id="shop-stars-display">0</span>
             </div>
 
-            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px;">🦄 Selecione ou Desbloqueie seu Personagem</h3>
+            <h3 class="titulo-secao">🦄 Selecione ou Desbloqueie seu Personagem</h3>
             <div class="character-grid" id="character-grid">
                 <!-- Dynamically populated via JS -->
             </div>
 
-            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px; margin-top:20px;">⚡ Poderes Adicionais Globais</h3>
+            <h3 class="titulo-secao">⚡ Poderes Adicionais Globais</h3>
             <div class="character-grid" id="upgrades-grid">
                 <!-- Dynamically populated via JS -->
             </div>
 
-            <h3 style="text-align:left; border-bottom:1px solid #555; padding-bottom:5px; margin-top:20px;">✨ Skins & Auras Estéticas</h3>
+            <h3 class="titulo-secao">✨ Skins & Auras Estéticas</h3>
             <div class="character-grid" id="skins-grid">
                 <!-- Dynamically populated via JS -->
             </div>
@@ -93,7 +93,7 @@
             <p>Fase Alcançada: <span id="final-phase">1</span></p>
             <p>Personagem: <span id="final-char">Padrão</span></p>
             <div id="name-input-container" class="hidden">
-                <p style="color: #00f0ff; margin-bottom: 10px;">🏆 Você entrou no Top 10 do placar!</p>
+                <p class="aviso-top10">🏆 Você entrou no Top 10 do placar!</p>
                 <input type="text" id="player-name" placeholder="Digite seu nome" maxlength="15" autocomplete="off">
                 <button id="btn-save-score" class="btn primary" style="padding: 10px 20px; font-size: 1rem;">Salvar</button>
             </div>
@@ -101,7 +101,7 @@
             <button id="btn-menu-go" class="btn secondary">Menu Principal</button>
         </div>
         <!-- Pause Menu -->
-        <div id="pause-menu" class="ui-panel hidden" style="z-index: 10; background: rgba(0,0,0,0.8);">
+        <div id="pause-menu" class="ui-panel pausa hidden">
             <h1 class="title">PAUSADO</h1>
             <p>Pressione P ou Esc (ou toque em ▶) para continuar...</p>
         </div>
