@@ -984,7 +984,7 @@ function atualizarEfeitosPersonagem(p, vel, dist) {
             const pal = paletaDe(p.char);
             const pos = pontoLocalNaTela(p, 4 - Math.random() * 12, -20 + Math.random() * 10, 1.3);
             Object.assign(e, {
-                ativa: true, x: pos.x, y: pos.y,
+                ativa: true, x: pos.x, y: pos.y, xAnt: pos.x, yAnt: pos.y,
                 vx: -(0.5 * vel + 0.35), vy: 0.25,
                 vida: VIDA_ESTRELINHA, rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
                 cor: pal.crina[Math.floor(Math.random() * pal.crina.length)]
@@ -993,6 +993,7 @@ function atualizarEfeitosPersonagem(p, vel, dist) {
     }
     for (const e of _estrelinhas) {
         if (!e.ativa) continue;
+        e.xAnt = e.x; e.yAnt = e.y;
         e.x += e.vx; e.y += e.vy; e.rot += e.vr;
         if (--e.vida <= 0) e.ativa = false;
     }
@@ -1004,12 +1005,13 @@ function limparEfeitosPersonagem(p) {
 }
 
 // Desenhado ATRÁS do personagem: brilho, fita de arco-íris e estrelinhas
-function desenharEfeitosPersonagem(ctx, p, dist, vel) {
+function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
+    const a = typeof alfaRender === 'number' ? alfaRender : 1;   // interpolação entre passos
     const pal = paletaDe(p.char);
 
     // brilho pulsando
     const centro = pontoLocalNaTela(p, 0, -6, 1.3);
-    const tamBrilho = 110 * (p.w / 50) * (1 + 0.1 * Math.sin(Date.now() / 300));
+    const tamBrilho = 110 * (p.w / 50) * (1 + 0.1 * Math.sin(tempo * 3.3));
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.drawImage(spriteBrilho(pal.crina[1]), centro.x - tamBrilho / 2, centro.y - tamBrilho / 2, tamBrilho, tamBrilho);
@@ -1050,7 +1052,7 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel) {
         const tam = 12 * k;
         ctx.globalAlpha = Math.min(1, k * 1.5);
         ctx.save();
-        ctx.translate(e.x, e.y);
+        ctx.translate(e.xAnt + (e.x - e.xAnt) * a, e.yAnt + (e.y - e.yAnt) * a);
         ctx.rotate(e.rot);
         ctx.drawImage(spriteEstrelinha(e.cor), -tam / 2, -tam / 2, tam, tam);
         ctx.restore();

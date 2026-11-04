@@ -747,6 +747,14 @@ function playSound(type) {
         gain.gain.setValueAtTime(0.1, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
         osc.start(now); osc.stop(now + 0.1);
+    } else if (type === 'jump2') {
+        // pulo no ar: mais agudo e com um "brilhinho" no fim
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(1050, now + 0.12);
+        gain.gain.setValueAtTime(0.09, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
+        osc.start(now); osc.stop(now + 0.14);
     } else if (type === 'collect') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(800, now);
@@ -1155,6 +1163,7 @@ function initGame() {
     stars = [];
     feathers = [];
     limparParticulas();
+    limparInputs();      // nenhum botão "preso" da partida anterior
     // Zera tudo que poderia vazar da partida anterior
     powerupItems = [];
     obstaculos = [];
@@ -1429,8 +1438,19 @@ function generateWorld() {
 }
 
 // Pulo: faíscas pastel + um "puf" de nuvem embaixo dos cascos
-function spawnJumpParticles() {
+function spawnJumpParticles(noAr = false) {
     const x = player.x + player.w / 2, y = player.y + player.h;
+    if (noAr) {
+        // pulo no ar: anel de brilhos saindo do corpo (sem "puf" de nuvem flutuando)
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            emitirParticula({
+                x, y: y - player.h * 0.4, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3,
+                life: 0.7, size: 4.5, forma: 'brilho', color: PALETA.particulas[i % PALETA.particulas.length]
+            });
+        }
+        return;
+    }
     for (let i = 0; i < 7; i++) {
         emitirParticula({
             x, y, vx: (Math.random() - 0.5) * 6, vy: Math.random() * 2.5,
@@ -1439,12 +1459,31 @@ function spawnJumpParticles() {
         });
     }
     for (let i = 0; i < 3; i++) {
-        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira' });
+        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira', noMundo: true });
     }
+}
+
+// Existe chão logo abaixo dos pés (até `dist` px)?
+function chaoAbaixo(dist) {
+    const pRealX = distance + player.x, margem = player.w * 0.2, pes = player.y + player.h;
+    for (const p of platforms) {
+        if (p.caindo) continue;
+        if (pRealX + player.w - margem > p.x && pRealX + margem < p.x + p.w && p.y >= pes - 2 && p.y - pes <= dist) return true;
+    }
+    return false;
+}
+
+// Copia o valor atual para o "anterior" da interpolação: evita desenhar um salto (ex.: 0 → -2π) num quadro
+function semInterpolar(...campos) {
+    if (!player || !player.ant) return;
+    for (const k of campos) player.ant[k] = player[k];
 }
 
 function jump() {
     if (state !== 'playing' || isPaused) return;
+
+    // o pulo cancela o dash (vira um "dash-jump"); a recarga continua
+    if (dashTimeLeft > 0) { dashTimeLeft = 0; isDashing = false; }
 
     if (isFlying) {
         player.vy = player.jumpPower * 0.8;
@@ -1455,7 +1494,15 @@ function jump() {
         return;
     }
 
+    // Caindo quase no chão com o pulo do ar sobrando: guarda para pular do chão (não gasta o pulo duplo à toa)
+    if (!player.onGround && player.vy > 0 && player.jumps > 0 && !isInfJumpActive && !isHoverActive
+        && chaoAbaixo(Math.max(12, player.vy * 3))) {
+        player.bufferPulo = PASSOS_BUFFER_PULO;
+        return;
+    }
+
     if (player.jumps < player.maxJumps || isInfJumpActive || isHoverActive) {
+        const noAr = !player.onGround && player.coyote <= 0;
         player.vy = player.jumpPower;
         player.jumps++;
         player.onGround = false;
@@ -1465,8 +1512,8 @@ function jump() {
         // Pulo disparado pelo buffer depois que o botão já foi solto: sai baixo (toque rápido = pulo baixo)
         if (!puloSegurado) { player.vy *= CORTE_PULO; player.podeCortarPulo = false; }
         isSlamming = false;
-        player.scaleX = 0.5; // Esticada extrema
-        player.scaleY = 1.6;
+        player.scaleX = noAr ? 0.7 : 0.5; // esticada (menor no ar)
+        player.scaleY = noAr ? 1.35 : 1.6;
 
         // Mortal para trás no pulo duplo (ou a cada 2 pulos no pulo infinito)
         if (player.jumps % 2 === 0) {
@@ -1474,10 +1521,11 @@ function jump() {
             player.giroT = 0;
             player.giroRapido = false;
         }
+        semInterpolar('spin', 'scaleX', 'scaleY');
 
-        playSound('jump');
+        playSound(noAr ? 'jump2' : 'jump');
         checkMission('jumps', 1);
-        spawnJumpParticles();
+        spawnJumpParticles(noAr);
     } else {
         // Sem pulos sobrando: guarda o pedido e pula assim que pousar (jump buffer)
         player.bufferPulo = PASSOS_BUFFER_PULO;
@@ -1506,13 +1554,15 @@ function doDash() {
     dashTimeLeft = DURACAO_DASH;
     dashCooldown = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
     isSlamming = false; // o dash cancela o slam (e o bônus dele)
+    player.vy = 0;      // trava a altura já no primeiro passo
     playSound('dash');
     checkMission('dashes', 1);
 }
 
 function doSlam() {
     if (state !== 'playing' || isPaused) return;
-    if (player.onGround || dashTimeLeft > 0) return; // não dá slam no chão nem no meio do dash
+    if (player.onGround) return; // não dá slam no chão
+    if (dashTimeLeft > 0) { dashTimeLeft = 0; isDashing = false; } // o slam cancela o dash
     player.vy = VEL_SLAM;
     player.podeCortarPulo = false;
     isSlamming = true;
@@ -1564,8 +1614,16 @@ window.addEventListener('keyup', (e) => {
     if (TECLAS_PULO.includes(e.code)) soltarPulo();
 });
 
+// Ao perder o foco (alt-tab, trocar de aba) o "soltar" do botão se perde: limpa tudo que está segurado
+function limparInputs() {
+    if (typeof ponteirosPulo !== 'undefined') ponteirosPulo.clear();
+    puloSegurado = false;
+}
+window.addEventListener('blur', limparInputs);
+
 // Pausa sozinho ao trocar de aba / minimizar
 document.addEventListener('visibilitychange', () => {
+    if (document.hidden) limparInputs();
     if (document.hidden && state === 'playing' && !isPaused) alternarPausa();
 });
 
@@ -2917,11 +2975,15 @@ function loop(agora) {
 // ─── Interpolação entre passos de física ───
 // A física roda a 60 passos/s; em telas de 120/144 Hz desenhamos o estado "entre" dois passos
 // para a rolagem e o personagem andarem lisos em vez de aos trancos.
-const CAMPOS_INTERP = ['y', 'rot', 'spin', 'runPhase', 'mistura', 'scaleX', 'scaleY', 'w', 'h'];
+const CAMPOS_INTERP = ['y', 'vy', 'rot', 'spin', 'runPhase', 'mistura', 'scaleX', 'scaleY', 'w', 'h'];
 let distAnt = 0;
+// Relógio da animação (crina, asas, brilhos): anda com a câmera lenta, para no hit-pause e é interpolado
+let tempoAnim = 0, tempoAnimAnt = 0, tempoRender = 0;
+let alfaRender = 1;   // fração entre o passo anterior e o atual (usada também por partículas)
 
 function guardarEstadoAnterior() {
     distAnt = distance;
+    tempoAnimAnt = tempoAnim;
     if (!player) return;
     player.ant = player.ant || {};
     for (const k of CAMPOS_INTERP) player.ant[k] = player[k];
@@ -2929,9 +2991,14 @@ function guardarEstadoAnterior() {
 }
 
 function renderInterpolado(alfa) {
-    if (!player || !player.ant || state === 'dying' && passosMorte >= PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) { render(); return; }
+    if (!player || !player.ant || state === 'dying' && passosMorte >= PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) {
+        tempoRender = tempoAnim; alfaRender = 1;
+        render(); return;
+    }
     alfa = Math.max(0, Math.min(1, alfa));
     const lerp = (a, b) => a + (b - a) * alfa;
+    alfaRender = alfa;
+    tempoRender = lerp(tempoAnimAnt, tempoAnim);
     // troca temporariamente os valores reais pelos interpolados, desenha e restaura
     const real = { distance };
     for (const k of CAMPOS_INTERP) real[k] = player[k];
@@ -2943,6 +3010,7 @@ function renderInterpolado(alfa) {
     platforms.forEach((p, i) => { p.y = platY[i]; });
     for (const k of CAMPOS_INTERP) player[k] = real[k];
     distance = real.distance;
+    alfaRender = 1;
 }
 
 const DICAS_TUTORIAL = [
@@ -2988,6 +3056,7 @@ function step() {
     // Câmera lenta desacelera a física inteira (o alcance do pulo não muda), com transição suave
     escalaTempo += ((isSlowMoActive ? ESCALA_SLOWMO : 1) - escalaTempo) * SUAVIZACAO_SLOWMO;
     const ts = escalaTempo;
+    tempoAnim += PASSO_FISICA * ts;
 
     // Textos flutuantes
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
@@ -3042,7 +3111,8 @@ function step() {
     if (phaseAnnounceFrames > 0) phaseAnnounceFrames--;
 
     // ── Gravidade: queda mais pesada que a subida, com velocidade máxima ──
-    let currentGravity = isFlying ? player.gravity * 0.4 : player.gravity;
+    if (dashTimeLeft > 0) player.vy = 0;   // no dash a altura fica travada desde o primeiro passo
+    let currentGravity = dashTimeLeft > 0 ? 0 : (isFlying ? player.gravity * 0.4 : player.gravity);
     if (player.vy > 0 && !isFlying && !isHoverActive) currentGravity *= MULT_GRAVIDADE_QUEDA;
     if (isMeteorActive && !player.onGround && player.vy > 0) currentGravity *= 2.5;
     player.vy += currentGravity * ts;
@@ -3071,7 +3141,7 @@ function step() {
     // Dash
     if (dashCooldown > 0) dashCooldown -= dt;
     if (dashTimeLeft > 0) {
-        dashTimeLeft -= dt;
+        dashTimeLeft -= dt * ts;   // na câmera lenta o dash dura mais e mantém o alcance
         isDashing = true;
         // Entrada e saída suaves (curva seno); MULT_CURVA_DASH mantém a distância total do dash
         const tDash = 1 - Math.max(0, dashTimeLeft) / DURACAO_DASH;
@@ -3162,7 +3232,13 @@ function step() {
         if (ob.destruido) continue;
         if (ob.plat.caindo) { ob.destruido = true; continue; }
         const topo = ob.plat.y - ob.h;
-        if (!(pRealRight > ob.x && pRealLeft < ob.x + ob.w && player.y + player.h > topo && player.y + 4 < ob.plat.y)) continue;
+        const dentroX = pRealRight > ob.x && pRealLeft < ob.x + ob.w;
+        // em cima de um bloco que está numa plataforma descendo: continua colado (sem "pousar" de novo a cada 2 passos)
+        if (ob.tipo === 'bloco' && dentroX && wasGrounded && player.vy >= 0) {
+            const pdy = ob.plat.dy || 0, pes = player.y + player.h;
+            if (pdy > 0 && pes >= topo - pdy - 2 && pes <= topo + 12) { aoPousar(topo, true); continue; }
+        }
+        if (!(dentroX && player.y + player.h > topo && player.y + 4 < ob.plat.y)) continue;
 
         if (ob.tipo === 'bloco' && player.vy >= 0 && player.y + player.h - dyPasso <= topo + 10) {
             // Pousou em cima do bloco: slam quebra, senão funciona como chão
@@ -3279,7 +3355,7 @@ function step() {
         }
     }
 
-    atualizarParticulas();
+    atualizarParticulas(effectiveSpeed);   // poeira no chão rola junto com o mundo
 
     if (player.y > ch) caiuNoBuraco();
 }
@@ -3298,7 +3374,7 @@ function emitirParticula(o) {
     }
     if (!s) { s = poolParticulas[cursorParticula % MAX_PARTICULAS]; cursorParticula++; }
     s.ativa = true;
-    s.x = o.x; s.y = o.y; s.vx = o.vx || 0; s.vy = o.vy || 0;
+    s.x = o.x; s.y = o.y; s.xAnt = o.x; s.yAnt = o.y; s.noMundo = !!o.noMundo; s.vx = o.vx || 0; s.vy = o.vy || 0;
     s.life = o.life || 1; s.vida0 = s.life;
     s.color = o.color || '#ffffff'; s.size = o.size || 3;
     s.forma = o.forma || 'circulo'; s.gravidade = o.gravidade || 0;
@@ -3309,10 +3385,11 @@ function limparParticulas() {
     for (const p of poolParticulas) p.ativa = false;
 }
 
-function atualizarParticulas() {
+function atualizarParticulas(velMundo = 0) {
     for (const pt of poolParticulas) {
         if (!pt.ativa) continue;
-        pt.x += pt.vx;
+        pt.xAnt = pt.x; pt.yAnt = pt.y;
+        pt.x += pt.vx - (pt.noMundo ? velMundo : 0);
         pt.y += pt.vy;
         pt.vy += pt.gravidade;
         if (pt.forma === 'poeira') { pt.vx *= 0.92; pt.vy *= 0.92; }
@@ -3333,6 +3410,10 @@ function spritePoeira() {
     });
 }
 
+// posição da partícula entre o passo anterior e o atual (lisa em 120/144 Hz)
+const px = (p) => p.xAnt + (p.x - p.xAnt) * alfaRender;
+const py = (p) => p.yAnt + (p.y - p.yAnt) * alfaRender;
+
 function desenharParticulas(ctx) {
     ctx.save();
     // 1) círculos e poeira (normal)
@@ -3342,11 +3423,11 @@ function desenharParticulas(ctx) {
         if (pt.forma === 'poeira') {
             const t = pt.size * (1 + (1 - k) * 1.6);
             ctx.globalAlpha = k * 0.7;
-            ctx.drawImage(spritePoeira(), pt.x - t, pt.y - t, t * 2, t * 2);
+            ctx.drawImage(spritePoeira(), px(pt) - t, py(pt) - t, t * 2, t * 2);
         } else {
             ctx.globalAlpha = Math.min(1, pt.life);
             ctx.fillStyle = pt.color;
-            ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(px(pt), py(pt), pt.size, 0, Math.PI * 2); ctx.fill();
         }
     }
     // 2) brilhos (modo lighter)
@@ -3357,7 +3438,7 @@ function desenharParticulas(ctx) {
         const t = pt.size * 2.4 * (0.4 + 0.6 * k);
         ctx.globalAlpha = Math.min(1, k * 1.4);
         ctx.save();
-        ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
+        ctx.translate(px(pt), py(pt)); ctx.rotate(pt.rot);
         ctx.drawImage(spriteEstrelinha(pt.color), -t / 2, -t / 2, t, t);
         ctx.restore();
     }
@@ -3372,16 +3453,17 @@ function aoPousar(topoY, estavaNoChao) {
         // Pose de recuperação do pouso + passada recomeça com os cascos da frente tocando o chão
         player.pouso = { t: 0, forca: vyImpacto };
         player.runPhase = (Math.floor(player.runPhase * FATOR_FASE_GALOPE) + 1 + 0.3) / FATOR_FASE_GALOPE;
+        semInterpolar('runPhase'); // a passada recomeça sem "varrer" um ciclo inteiro num quadro
         if (player.spin < 0) player.giroRapido = true;
         if (vyImpacto > 8 || slamValido) {
             player.scaleX = 1.6;
             player.scaleY = 0.4;
-            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira' });
+            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira', noMundo: true });
         } else {
             // Pouso leve: squash suave + um pouco de poeira
             player.scaleX = 1.3;
             player.scaleY = 0.7;
-            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira' });
+            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira', noMundo: true });
         }
         if (slamValido) {
             screenShake = 20; // impacto brutal
@@ -3599,12 +3681,13 @@ function morrer() {
 function passoMorte() {
     passosMorte--;
     frames++;
+    tempoAnim += PASSO_FISICA;
     sortearTremor();
     if (passosMorte < PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) {
         player.vy += player.gravity;
         player.y += player.vy;
         player.spin -= 0.25;
-        atualizarParticulas();
+        atualizarParticulas(0);
     }
     if (passosMorte <= 0) mostrarGameOver();
 }
@@ -4211,8 +4294,8 @@ function render() {
     }
 
     // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
-    if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed);
-    if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, frames * PASSO_FISICA, 1.3); }
+    if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed, tempoRender);
+    if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, tempoRender, 1.3); }
     else if (player.char.id === 20) { drawDragon(ctx, player); }   // desenhos antigos (só para comparar)
     else if (player.char.id === 21) { drawCat(ctx, player); }
     else if (player.char.id === 22) { drawRabbit(ctx, player); }
