@@ -249,7 +249,7 @@ canvas {
 }
 
 /* HUD: pílulas de "vidro" com texto creme contornado (combina com a noite mágica) */
-.score-display, .stars-display, .speed-display {
+.score-display, .stars-display, .speed-display, .fase-display {
     background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
     padding: 10px 22px;
@@ -265,18 +265,18 @@ canvas {
 .stars-display span { color: #FFE08A; }
 .speed-display span { color: #FF9CCB; }
 
+/* Power-ups ativos: o mesmo vidro do placar (sem brilho branco nem pulsar constante) */
 .powerup-display {
-    background: rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(10px);
-    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    padding: 10px 20px;
     border-radius: 30px;
-    font-size: 1.5rem;
-    font-weight: 900;
-    border: 1px solid #ffffff;
-    box-shadow: 0 0 20px rgba(255,255,255,0.8);
-    color: #fff;
-    text-shadow: 0 0 10px #ffffff;
-    animation: pulse 1s infinite alternate;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #FFF6E8;
+    border: 1.5px solid rgba(185, 164, 255, 0.7);
+    box-shadow: 0 4px 0 rgba(42, 20, 80, 0.6), 0 6px 18px rgba(0, 0, 0, 0.35);
+    text-shadow: 0 2px 0 #2A1450, 2px 0 0 #2A1450, -2px 0 0 #2A1450, 0 -2px 0 #2A1450;
 }
 
 @keyframes pulse {
@@ -447,10 +447,10 @@ canvas {
 /* Celular em pé / telas estreitas: placar compacto numa linha; power-ups abaixo da pílula da fase
    (fica no fim do arquivo para valer por cima das regras acima) */
 @media (max-width: 600px) {
-    #hud { top: 10px; left: 10px; right: 10px; flex-direction: column; gap: 6px; }
+    #hud { top: 10px; left: 10px; right: 10px; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
     .hud-stats { gap: 6px; width: 100%; justify-content: center; }
     .score-display, .stars-display, .speed-display { font-size: 1rem; padding: 6px 12px; }
-    .hud-powerups { margin-top: 34px; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 6px; width: 100%; }
+    .hud-powerups { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
     .powerup-display { font-size: 0.85rem; padding: 5px 10px; }
     .ui-panel { padding: 24px 18px; }
     .title { font-size: 2.4rem; }
@@ -531,7 +531,8 @@ canvas {
 .char-name { color: #FFF6E8; text-shadow: 0 2px 0 #2A1450; }
 .char-desc { color: #D9CCF2; }
 /* a regra geral "canvas { position:absolute; 100% }" é dos canvas do jogo — o retrato fica no fluxo do card */
-canvas.retrato { position: static; width: 120px; height: 90px; display: block; margin: 0 auto; }
+canvas.retrato { position: static; width: 140px; height: 104px; display: block; margin: 0 auto; }
+.character-grid { padding-bottom: 10px; }   /* o preço do último card não fica cortado */
 
 /* Placar */
 #leaderboard-list { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(185, 164, 255, 0.3); }
@@ -551,4 +552,20 @@ canvas.retrato { position: static; width: 120px; height: 90px; display: block; m
     box-shadow: 0 4px 0 #6B3FA0, 0 8px 18px rgba(0, 0, 0, 0.35);
     animation: slideDown 0.3s ease-out;
     transition: opacity 0.5s;
+}
+
+/* Pílula da fase (HTML): mesmo vidro das outras; só a borda muda com a cor da fase atual */
+.fase-display {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.2rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    white-space: nowrap;
+    border-color: var(--cor-fase, rgba(185, 164, 255, 0.7));
+}
+@media (max-width: 600px) {
+    .fase-display { position: static; transform: none; font-size: 0.95rem; padding: 6px 12px; }
 }

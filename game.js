@@ -63,7 +63,7 @@ const PALETA = {
     lua: '#FFE9B8',
     estrela: '#FFFFFF', estrelaQuente: '#FFE8B0',
     aurora: ['#7FFFD4', '#FF9EE5', '#B9A4FF'],
-    nuvem: '#FFFFFF', nuvemSombra: '#CBB8EE', nuvemContorno: '#4A2763',
+    nuvem: '#EEE8FF', nuvemSombra: '#C7B4EC', nuvemContorno: '#4A2763',   // nuvem lavanda: o herói é o ponto mais claro
     nuvemMovel: '#DDF0FF', nuvemChuva: '#B9B0CC',
     cristal: '#BFEFFF', cristalSombra: '#6FA8E8', cristalContorno: '#2A3A7A',
     barreira: ['#7FFFD4', '#B9A4FF'],
@@ -285,7 +285,7 @@ let obstaculos = []; // { tipo: 'espinho'|'barreira'|'bloco', plat, x, w, h, des
 // 10 TIPOS DE ESTRELA — cada tipo tem valor, visual e raridade
 // ─────────────────────────────────────────────────────────────────────────
 const STAR_TYPES = [
-    { id: 'comum', name: 'Estrela Comum', value: 10, size: 10, color: '#aaaaaa', glow: '#888888', points: 6, weight: 400 },
+    { id: 'comum', name: 'Estrela Comum', value: 10, size: 10, color: '#FFE08A', glow: '#FFC24A', points: 6, weight: 400 },
     { id: 'brilhante', name: 'Estrela Brilhante', value: 25, size: 12, color: '#ffff88', glow: '#ffdd00', points: 6, weight: 200 },
     { id: 'rara', name: 'Estrela Rara', value: 50, size: 14, color: '#00ddff', glow: '#00aaff', points: 7, weight: 120 },
     { id: 'superior', name: 'Estrela Superior', value: 100, size: 16, color: '#00ff88', glow: '#00cc44', points: 7, weight: 70 },
@@ -1076,15 +1076,21 @@ var retratosLiberados = false;
 const retratosPendentes = [];
 function desenharRetrato(cv, char) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    cv.width = 120 * dpr; cv.height = 90 * dpr;
+    cv.width = 140 * dpr; cv.height = 104 * dpr;
     const g = cv.getContext('2d');
-    g.setTransform(dpr * 0.82, 0, 0, dpr * 0.82, 0, 0);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // disco claro atrás: personagens escuros não somem no fundo roxo do card
+    const disco = g.createRadialGradient(70, 56, 4, 70, 56, 48);
+    disco.addColorStop(0, 'rgba(255,240,255,0.22)');
+    disco.addColorStop(1, 'rgba(255,240,255,0)');
+    g.fillStyle = disco; g.fillRect(0, 0, 140, 104);
+    g.setTransform(dpr * 0.88, 0, 0, dpr * 0.88, 0, 0);
     const p = {
         char, w: 50, h: 40, rot: 0, spin: 0, scaleX: 1, scaleY: 1, vy: 0, onGround: true, mistura: 0,
         runPhase: 0.12 / FATOR_FASE_GALOPE, poseAr: { fl: -35, fr: -15, bl: 25, br: 5 },
         hurtFrames: 0, sorriso: 1, piscar: 100, assustado: false
     };
-    desenharUnicornio(g, 45, 52, p, 0.3, 1.3);
+    desenharUnicornio(g, 55, 58, p, 0.3, 1.3);   // enquadrado para a cabeça maior
 }
 function desenharRetratosPendentes() {
     if (!retratosLiberados) return;
@@ -1168,6 +1174,7 @@ function initGame() {
     powerupItems = [];
     obstaculos = [];
     floatingTexts = [];
+    aneis = [];
     isSlamming = false;
     isDashing = false; dashCooldown = 0; dashTimeLeft = 0;
     screenShake = 0; sleepFrames = 0;
@@ -1459,7 +1466,7 @@ function spawnJumpParticles(noAr = false) {
         });
     }
     for (let i = 0; i < 3; i++) {
-        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira', noMundo: true });
+        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
     }
 }
 
@@ -2733,6 +2740,8 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
         ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
     }
     ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.strokeStyle = PALETA.textoContorno; ctx.lineWidth = 2;   // contorno: separa do fundo estrelado
+    ctx.stroke();
     ctx.fill();
 
     // Brilho central (estrelas raras+)
@@ -2760,7 +2769,7 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
     // Label de valor para estrelas supremas+ (hard to miss)
     if (st.value >= 2500) {
         ctx.save();
-        ctx.font = `bold ${Math.max(9, Math.floor(sz * 0.55))}px sans-serif`;
+        ctx.font = `700 ${Math.max(9, Math.floor(sz * 0.55))}px ${FONTE_JOGO}`;
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 3;
@@ -2926,7 +2935,17 @@ function setTexto(el, txt) {
     if (el._txt !== txt) { el._txt = txt; el.textContent = txt; }
 }
 
+const faseDisplay = document.getElementById('fase-display');
+let faseDisplayIdx = -1;
 function updateHUD() {
+    // pílula da fase: nome completo no computador, curto no celular; a borda leva a cor da fase
+    const estreito = (gameContainer.clientWidth || cw) < 600;
+    const ph = PHASES[currentPhase];
+    setTexto(faseDisplay, estreito ? `✦ Fase ${currentPhase + 1}/${PHASES.length} ✦` : `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`);
+    if (faseDisplayIdx !== currentPhase) {
+        faseDisplayIdx = currentPhase;
+        faseDisplay.style.setProperty('--cor-fase', FASES_VISUAL[currentPhase].platform.edge);
+    }
     setTexto(scoreDisplay, String(Math.floor(score)));
     setTexto(starsDisplay, String(Math.round(starsCollected)));
     setTexto(speedDisplay, (gameSpeed / (window.innerWidth > 800 ? 7 : 5)).toFixed(1));
@@ -3296,6 +3315,7 @@ function step() {
             let burstColor = st.glow || '#ffdd00';
             for (let i = 0; i < 8; i++) emitirParticula({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 5, forma: 'brilho' });
 
+            aneis.push({ x: s.x - distance, y: s.y, cor: burstColor, t: 0 });   // anel que expande ao coletar
             floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal}`, life: 1.0, color: burstColor });
             sleepFrames = 2; // micro hit-pause
 
@@ -3385,7 +3405,26 @@ function limparParticulas() {
     for (const p of poolParticulas) p.ativa = false;
 }
 
+// Anéis que expandem ao coletar estrela (curtos: 12 passos; no máximo 12 de uma vez)
+let aneis = [];
+function atualizarAneis() {
+    let j = 0;
+    for (const a of aneis) { a.t++; if (a.t <= 12) aneis[j++] = a; }
+    aneis.length = Math.min(j, 12);
+}
+function desenharAneis(ctx) {
+    ctx.save();
+    for (const a of aneis) {
+        const k = a.t / 12;
+        ctx.globalAlpha = 1 - k;
+        ctx.strokeStyle = a.cor; ctx.lineWidth = 3 * (1 - k) + 0.5;
+        ctx.beginPath(); ctx.arc(a.x, a.y, 6 + k * 22, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+}
+
 function atualizarParticulas(velMundo = 0) {
+    atualizarAneis();
     for (const pt of poolParticulas) {
         if (!pt.ativa) continue;
         pt.xAnt = pt.x; pt.yAnt = pt.y;
@@ -3399,13 +3438,14 @@ function atualizarParticulas(velMundo = 0) {
     }
 }
 
-function spritePoeira() {
-    return spriteCache('poeira', 64, (g, t) => {
+function spritePoeira(cor = '#FFFFFF') {   // "puf" de nuvem tingido
+    return spriteCache('poeira|' + cor, 64, (g, t) => {
+        const c = paraRGBA(cor);
         const m = t / 2;
         const grad = g.createRadialGradient(m, m, 0, m, m, m);
-        grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-        grad.addColorStop(0.6, 'rgba(255,255,255,0.5)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.9)`);
+        grad.addColorStop(0.6, `rgba(${c.r},${c.g},${c.b},0.5)`);
+        grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
         g.fillStyle = grad; g.fillRect(0, 0, t, t);
     });
 }
@@ -3423,7 +3463,7 @@ function desenharParticulas(ctx) {
         if (pt.forma === 'poeira') {
             const t = pt.size * (1 + (1 - k) * 1.6);
             ctx.globalAlpha = k * 0.7;
-            ctx.drawImage(spritePoeira(), px(pt) - t, py(pt) - t, t * 2, t * 2);
+            ctx.drawImage(spritePoeira(pt.color), px(pt) - t, py(pt) - t, t * 2, t * 2);
         } else {
             ctx.globalAlpha = Math.min(1, pt.life);
             ctx.fillStyle = pt.color;
@@ -3459,12 +3499,12 @@ function aoPousar(topoY, estavaNoChao) {
         if (vyImpacto > 8 || slamValido) {
             player.scaleX = 1.6;
             player.scaleY = 0.4;
-            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira', noMundo: true });
+            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
         } else {
             // Pouso leve: squash suave + um pouco de poeira
             player.scaleX = 1.3;
             player.scaleY = 0.7;
-            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira', noMundo: true });
+            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
         }
         if (slamValido) {
             screenShake = 20; // impacto brutal
@@ -3731,6 +3771,28 @@ function mostrarGameOver() {
 const corMix = (a, b, t) => paraHex(misturar(paraRGBA(a), paraRGBA(b), t));
 const rgbaDe = (cor, a) => { const c = paraRGBA(cor); return `rgba(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)},${a})`; };
 
+// Cores "visuais" de cada fase, sem editar PHASES:
+// - céu sempre com a cor mais escura em cima (horizonte iluminado em todas as fases)
+// - céu puxado para a noite roxa (fases marrons, verde-ácido e cinza puro deixam de fugir do tema)
+// - brilhos e bordas neon suavizados (teto de saturação)
+const COR_NOITE = '#1B1340';
+const FASES_VISUAL = PHASES.map(ph => {
+    const ceu = [ph.sky[0], ph.sky[1]]
+        .sort((a, b) => luminancia(paraRGBA(a)) - luminancia(paraRGBA(b)))
+        .map(c => corMix(c, COR_NOITE, 0.45));
+    const suave = (c) => corMix(c, '#FFFFFF', 0.3);
+    return { ...ph, sky: ceu, platform: { top: ph.platform.top, glow: suave(ph.platform.glow), edge: suave(ph.platform.edge) } };
+});
+
+// Silhueta no topo das montanhas próximas, conforme o tema da fase
+function decorDaFase(id) {
+    if ([3, 16, 18].includes(id)) return 'estalagmite';
+    if ([7, 10].includes(id)) return 'cogumelo';
+    if ([4, 17, 22].includes(id)) return 'cristal';
+    if ([12, 14, 15, 20, 24].includes(id)) return 'torre';
+    return 'pinheiro';
+}
+
 // Aleatório com semente: o cenário de cada fase sai sempre igual
 function aleatorioSemente(semente) {
     let s = semente >>> 0;
@@ -3767,7 +3829,7 @@ function progressoNaFase() {
 }
 
 function desenharCeu(faseIdx, t) {
-    const ph = PHASES[faseIdx], prox = PHASES[Math.min(faseIdx + 1, PHASES.length - 1)];
+    const ph = FASES_VISUAL[faseIdx], prox = FASES_VISUAL[Math.min(faseIdx + 1, PHASES.length - 1)];
     const chave = faseIdx + '|' + Math.round(t * 50);
     if (chave !== ceuChave) {
         ceuChave = chave;
@@ -3792,7 +3854,7 @@ function desenharCeu(faseIdx, t) {
 function obterCenario(faseIdx) {
     const chave = faseIdx + '|' + cw + '|' + ch + '|' + bgCanvas.width;
     if (cacheCenario && cacheCenario.chave === chave) return cacheCenario;
-    const ph = PHASES[faseIdx];
+    const ph = FASES_VISUAL[faseIdx];
     const rnd = aleatorioSemente(1234 + faseIdx * 97);
     const TW = Math.max(cw, 900);           // largura do "azulejo" que se repete na horizontal
     const onda = (x, n, f) => Math.sin(2 * Math.PI * n * x / TW + f); // n inteiro = emenda perfeita
@@ -3818,24 +3880,33 @@ function obterCenario(faseIdx) {
         g.globalAlpha = 1;
     }
 
-    // 2) Aurora: 3 faixas onduladas com degradê vertical, tingidas pela cor da fase
-    const hA = ch * 0.6;
+    // 2) Aurora: 2 cortinas no alto do céu, feitas de raios verticais finos presos a uma curva ondulada
+    const hA = ch * 0.5;
     const aurora = novoCanvas(TW, hA);
     {
         const g = aurora.getContext('2d');
-        for (let k = 0; k < 3; k++) {
-            const cor = corMix(PALETA.aurora[k], ph.platform.glow, 0.35);
-            const base = hA * (0.18 + 0.12 * k), amp = 25 + 15 * k, alt = 70 + 25 * k, f = rnd() * 6;
-            const grad = g.createLinearGradient(0, base - amp, 0, base + amp + alt);
-            grad.addColorStop(0, rgbaDe(cor, 0));
-            grad.addColorStop(0.4, rgbaDe(cor, 0.22));
-            grad.addColorStop(1, rgbaDe(cor, 0));
+        for (let k = 0; k < 2; k++) {
+            const cor = corMix(PALETA.aurora[k], ph.platform.glow, 0.3);
+            const base = hA * (0.2 + 0.22 * k), amp = 22 + 12 * k, f = rnd() * 6;
+            const topoEm = (x) => base + amp * onda(x, k + 1, f) + 8 * onda(x, k + 3, f + 2);
+            // brilho difuso por trás dos raios
+            const grad = g.createLinearGradient(0, base - amp, 0, base + amp + 70);
+            grad.addColorStop(0, rgbaDe(cor, 0)); grad.addColorStop(0.35, rgbaDe(cor, 0.1)); grad.addColorStop(1, rgbaDe(cor, 0));
             g.fillStyle = grad;
-            // o caminho passa um pouco das bordas do azulejo: assim não aparece emenda vertical
             g.beginPath();
-            for (let x = -32; x <= TW + 32; x += 16) g.lineTo(x, base + amp * onda(x, k + 1, f));
-            for (let x = TW + 32; x >= -32; x -= 16) g.lineTo(x, base + amp * onda(x, k + 1, f) + alt + 20 * onda(x, k + 2, f + 1));
+            for (let x = -32; x <= TW + 32; x += 16) g.lineTo(x, topoEm(x));
+            for (let x = TW + 32; x >= -32; x -= 16) g.lineTo(x, topoEm(x) + 70);
             g.closePath(); g.fill();
+            // raios: retângulos finos com degradê (claro em cima, somem embaixo)
+            const nRaios = Math.round(TW / 22);
+            for (let i = 0; i < nRaios; i++) {
+                const x = (i / nRaios) * TW + rnd() * 10, y = topoEm(x), alt = 40 + rnd() * 55, larg = 2 + rnd() * 2.5;
+                const gr = g.createLinearGradient(0, y, 0, y + alt);
+                gr.addColorStop(0, rgbaDe(cor, 0.08 + rnd() * 0.12)); gr.addColorStop(1, rgbaDe(cor, 0));
+                g.fillStyle = gr;
+                g.fillRect(x, y, larg, alt);
+                if (x + larg > TW) g.fillRect(x - TW, y, larg, alt);   // emenda do azulejo
+            }
         }
     }
 
@@ -3850,9 +3921,25 @@ function obterCenario(faseIdx) {
         for (let x = -16; x <= TW + 16; x += 8) g.lineTo(x, h - alturaEm(x));
         g.lineTo(TW + 16, h + 2); g.closePath(); g.fill();
         if (pinheiros) {
+            // silhueta conforme o tema: pinheiros, cogumelos, cristais, torres ou estalagmites
+            const tipo = decorDaFase(ph.id);
             for (let i = 0; i < pinheiros; i++) {
                 const x = rnd() * TW, y = h - alturaEm(x) + 2, a = 12 + rnd() * 18;
-                g.beginPath(); g.moveTo(x - a * 0.32, y); g.lineTo(x, y - a); g.lineTo(x + a * 0.32, y); g.closePath(); g.fill();
+                g.beginPath();
+                if (tipo === 'cogumelo') {
+                    g.rect(x - a * 0.08, y - a * 0.55, a * 0.16, a * 0.55);
+                    g.moveTo(x + a * 0.36, y - a * 0.5); g.ellipse(x, y - a * 0.55, a * 0.36, a * 0.26, 0, Math.PI, 0);
+                } else if (tipo === 'cristal') {
+                    g.moveTo(x - a * 0.18, y); g.lineTo(x - a * 0.12, y - a * 0.7); g.lineTo(x, y - a); g.lineTo(x + a * 0.12, y - a * 0.7); g.lineTo(x + a * 0.18, y);
+                } else if (tipo === 'torre') {
+                    g.rect(x - a * 0.14, y - a, a * 0.28, a);
+                    g.moveTo(x - a * 0.2, y - a); g.lineTo(x, y - a * 1.3); g.lineTo(x + a * 0.2, y - a);
+                } else if (tipo === 'estalagmite') {
+                    g.moveTo(x - a * 0.25, y); g.quadraticCurveTo(x - a * 0.05, y - a * 0.5, x, y - a * 0.9); g.quadraticCurveTo(x + a * 0.05, y - a * 0.5, x + a * 0.25, y);
+                } else {
+                    g.moveTo(x - a * 0.32, y); g.lineTo(x, y - a); g.lineTo(x + a * 0.32, y);
+                }
+                g.closePath(); g.fill();
             }
         }
         // luz de borda no topo (cor da fase)
@@ -3882,8 +3969,16 @@ function obterCenario(faseIdx) {
             if (x - r < 0) bolha(x + TW, r);
             if (x + r > TW) bolha(x - TW, r);
         }
-        g.fillStyle = rgbaDe(corMix('#FFFFFF', ph.platform.edge, 0.3), 0.14);
+        // "mar de nuvens": degradê da cor da fase (topo) até o céu (base, opaco) + borda clara em cima
+        const gradMar = g.createLinearGradient(0, hN * 0.2, 0, hN);
+        gradMar.addColorStop(0, rgbaDe(corMix(ph.platform.edge, '#FFFFFF', 0.3), 0.3));
+        gradMar.addColorStop(1, ph.sky[0]);
+        g.fillStyle = 'rgba(255,255,255,0.32)';     // borda clara: a forma inteira clara...
         g.fill(banco, 'nonzero');
+        g.save(); g.translate(0, 2);                  // ...e por cima a mesma forma 2px abaixo (sobra só a borda do topo)
+        g.fillStyle = gradMar;
+        g.fill(banco, 'nonzero');
+        g.restore();
     }
 
     // vaga-lumes: posições-base fixas por fase
@@ -3902,19 +3997,27 @@ function desenharCamada(img, x0, y) {
     for (; x < cw; x += w) bgCtx.drawImage(img, x, y, w, h);
 }
 
-function spriteLua() {
-    return spriteCache('lua', 220, (g, t) => {
+// Lua: cheia (0), crescente (1) ou meia (2), conforme a fase
+function spriteLua(variante = 0) {
+    return spriteCache('lua|' + variante, 220, (g, t) => {
         const m = t / 2;
         const halo = g.createRadialGradient(m, m, 30, m, m, m);
-        halo.addColorStop(0, 'rgba(255,240,200,0.35)');
+        halo.addColorStop(0, `rgba(255,240,200,${variante === 1 ? 0.22 : 0.35})`);
         halo.addColorStop(1, 'rgba(255,240,200,0)');
         g.fillStyle = halo; g.fillRect(0, 0, t, t);
-        const disco = g.createRadialGradient(m - 12, m - 12, 4, m, m, 38);
+        // disco da lua num canvas próprio, para "recortar" a sombra sem apagar o halo
+        const d = document.createElement('canvas'); d.width = d.height = t;
+        const dg = d.getContext('2d');
+        const disco = dg.createRadialGradient(m - 12, m - 12, 4, m, m, 38);
         disco.addColorStop(0, '#FFFBEA'); disco.addColorStop(1, PALETA.lua);
-        g.fillStyle = disco;
-        g.beginPath(); g.arc(m, m, 36, 0, Math.PI * 2); g.fill();
-        g.fillStyle = 'rgba(190,160,110,0.22)';
-        [[-10, 8, 7], [12, -6, 5], [6, 16, 4], [-14, -12, 3]].forEach(([dx, dy, r]) => { g.beginPath(); g.arc(m + dx, m + dy, r, 0, Math.PI * 2); g.fill(); });
+        dg.fillStyle = disco;
+        dg.beginPath(); dg.arc(m, m, 36, 0, Math.PI * 2); dg.fill();
+        dg.fillStyle = 'rgba(190,160,110,0.22)';
+        [[-10, 8, 7], [12, -6, 5], [6, 16, 4], [-14, -12, 3]].forEach(([dx, dy, r]) => { dg.beginPath(); dg.arc(m + dx, m + dy, r, 0, Math.PI * 2); dg.fill(); });
+        dg.fillStyle = '#000';   // recorte opaco (senão a sombra quase não apaga)
+        if (variante === 1) { dg.globalCompositeOperation = 'destination-out'; dg.beginPath(); dg.arc(m + 18, m - 8, 34, 0, Math.PI * 2); dg.fill(); }
+        if (variante === 2) { dg.globalCompositeOperation = 'destination-out'; dg.fillRect(m + 4, 0, t, t); }
+        g.drawImage(d, 0, 0);
     });
 }
 
@@ -3938,14 +4041,15 @@ function desenharEstrelaCadente() {
 
 // Fundo completo: céu, estrelas, lua, aurora, montanhas, nuvens e efeitos de algumas fases
 function desenharFundo(faseIdx, dist, tx, ty) {
-    const ph = PHASES[faseIdx];
+    const ph = FASES_VISUAL[faseIdx];
     desenharCeu(faseIdx, state === 'menu' ? 0 : progressoNaFase());
     const cen = obterCenario(faseIdx);
     bgCtx.save();
     bgCtx.translate(tx * 0.5, ty * 0.5);
 
     desenharCamada(cen.estrelas, dist * 0.02, 0);
-    bgCtx.drawImage(spriteLua(), cw * 0.8 - 110, ch * 0.17 - 110, 220, 220);
+    const xLua = cw * (0.6 + (faseIdx % 4) * 0.09), yLua = ch * (0.13 + (faseIdx % 3) * 0.04);   // a lua muda de lugar e de fase
+    bgCtx.drawImage(spriteLua(faseIdx % 3), xLua - 110, yLua - 110, 220, 220);
     // estrelas que piscam (sprite de 4 pontas, modo "lighter")
     bgCtx.save();
     bgCtx.globalCompositeOperation = 'lighter';
@@ -4035,7 +4139,7 @@ function spriteNuvem(w, tipo, ph) {
     const g = c.getContext('2d');
     g.setTransform(s, 0, 0, s, M * s, M * s);
 
-    let base = corMix(PALETA.nuvem, ph.platform.edge, 0.12);
+    let base = corMix(PALETA.nuvem, ph.platform.edge, 0.06);
     let sombra = corMix(PALETA.nuvemSombra, ph.platform.glow, 0.25);
     const contorno = corMix(PALETA.nuvemContorno, ph.platform.glow, 0.15);
     if (tipo === 'movel') base = corMix(PALETA.nuvemMovel, ph.platform.edge, 0.1);
@@ -4064,10 +4168,10 @@ function spriteNuvem(w, tipo, ph) {
     g.save(); g.clip(forma); g.translate(-2, -6); g.fillStyle = base; g.fill(forma); g.restore();
     // brilho no topo + linha da cor da fase (identidade de cada fase)
     g.save(); g.clip(forma);
-    g.fillStyle = 'rgba(255,255,255,0.75)';
+    g.fillStyle = 'rgba(255,255,255,0.5)';
     g.beginPath(); g.roundRect(10, 2, W - 20, 4, 2); g.fill();
-    g.fillStyle = rgbaDe(ph.platform.edge, 0.35);
-    g.fillRect(0, T - 22, W, 3);
+    g.fillStyle = rgbaDe(ph.platform.edge, 0.5);
+    g.fillRect(0, T - 9, W, 3);   // faixa da cor da fase na borda de baixo
     g.restore();
 
     if (tipo === 'chuva') {
@@ -4079,7 +4183,7 @@ function spriteNuvem(w, tipo, ph) {
         g.stroke();
     } else if (tipo === 'movel') {
         // lacinho de fita na frente (plataforma móvel)
-        g.save(); g.translate(W * 0.18, 8);
+        g.save(); g.translate(W * 0.18, 8); g.scale(1.5, 1.5);   // lacinho maior
         g.fillStyle = PALETA.particulas[0]; g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 1.5; g.lineJoin = 'round';
         g.beginPath(); g.moveTo(0, 0); g.lineTo(-8, -5); g.lineTo(-8, 5); g.closePath(); g.fill(); g.stroke();
         g.beginPath(); g.moveTo(0, 0); g.lineTo(8, -5); g.lineTo(8, 5); g.closePath(); g.fill(); g.stroke();
@@ -4116,14 +4220,14 @@ function _spriteObstaculo(tipo, ph, s) {
     g.setTransform(s, 0, 0, s, M * s, M * s);
     g.lineJoin = 'round'; g.lineCap = 'round';
     if (tipo === 'espinho') {
-        const cor = corMix(PALETA.cristal, ph.platform.glow, 0.25), sombra = corMix(PALETA.cristalSombra, ph.platform.glow, 0.2);
+        const cor = corMix(PALETA.cristal, ph.platform.glow, 0.5), sombra = corMix(PALETA.cristalSombra, ph.platform.glow, 0.2);
         const picos = [[0, 13, 0.22, 0], [11, 25, 0.5, 0], [24, 36, 0.78, 0]];
         const alturas = [oh * 0.75, oh, oh * 0.8];
         picos.forEach(([x0, x1], i) => {
             const xm = (x0 + x1) / 2, topo = oh - alturas[i];
             const caminho = new Path2D();
             caminho.moveTo(x0, oh); caminho.lineTo(xm, topo); caminho.lineTo(x1, oh); caminho.closePath();
-            g.strokeStyle = PALETA.cristalContorno; g.lineWidth = 3; g.stroke(caminho);
+            g.strokeStyle = PALETA.cristalContorno; g.lineWidth = 4; g.stroke(caminho);
             g.fillStyle = sombra; g.fill(caminho);
             g.fillStyle = cor;
             g.beginPath(); g.moveTo(x0, oh); g.lineTo(xm, topo); g.lineTo(xm, oh); g.closePath(); g.fill();
@@ -4237,7 +4341,7 @@ function textoContornado(ctx, txt, x, y, cor, contorno, larguraContorno) {
 }
 
 function render() {
-    const ph = PHASES[currentPhase];
+    const ph = FASES_VISUAL[currentPhase];
     // Tremor de tela: sorteado no passo de física (não muda a cada quadro desenhado em 144 Hz)
     const tx = tremorX, ty = tremorY;
 
@@ -4269,6 +4373,7 @@ function render() {
     if (isMagnetActive) drawMagnetField(ctx, player);
 
     desenharParticulas(ctx);
+    desenharAneis(ctx);
     desenharSombraJogador();
 
     const cx = player.x + player.w / 2; // player.x já é coordenada de tela
@@ -4329,20 +4434,8 @@ function render() {
         ctx.restore();
     }
 
-    // ── INDICADOR DE FASE (pílula no topo, centro; no celular fica logo abaixo do placar) ──
-    ctx.save();
+    // (o indicador de fase agora é uma pílula do HUD em HTML — ver updateHUD)
     const kUI = escalaUI();
-    ctx.font = `600 ${15 * kUI}px ${FONTE_JOGO}`;
-    ctx.textAlign = 'center';
-    const rotulo = telaEstreita() ? `✦ Fase ${currentPhase + 1}/${PHASES.length} ✦` : `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`;
-    const larg = ctx.measureText(rotulo).width + 28 * kUI;
-    const yPilula = (telaEstreita() ? 52 : 54) * kUI;
-    ctx.fillStyle = 'rgba(20,10,50,0.55)';
-    ctx.strokeStyle = rgbaDe(ph.platform.edge, 0.6); ctx.lineWidth = 1.5 * kUI;
-    ctx.beginPath(); ctx.roundRect(cw / 2 - larg / 2, yPilula, larg, 28 * kUI, 14 * kUI); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = PALETA.texto;
-    ctx.fillText(rotulo, cw / 2, yPilula + 19 * kUI);
-    ctx.restore();
 
     // ── TEXTOS FLUTUANTES (com contorno, sem shadowBlur) ──
     ctx.save();
