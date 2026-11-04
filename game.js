@@ -4601,11 +4601,27 @@ btnStart.onclick = () => { startMusic(); initGame(); };
 btnChars.onclick = () => {
     mainMenu.classList.add('hidden');
     charMenu.classList.remove('hidden');
+    charMenu.scrollTop = 0;   // a loja sempre abre no começo
 };
-btnBack.onclick = () => {
+function voltarDaLoja() {
     charMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
-};
+}
+btnBack.onclick = voltarDaLoja;   // botão fixo no topo da loja
+document.getElementById('btn-back-fim').onclick = voltarDaLoja;   // e o do final, para quem rolou até lá
+// atalhos da barra fixa: rolam a loja até a seção (descontando a altura da barra)
+document.querySelectorAll('.loja-atalhos button').forEach(b => {
+    b.onclick = () => {
+        const alvo = document.getElementById(b.dataset.secao);
+        const barra = charMenu.querySelector('.loja-topo').offsetHeight;
+        const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        charMenu.scrollTo({ top: alvo.offsetTop - barra - 8, behavior: suave ? 'smooth' : 'auto' });
+    };
+});
+// Esc fecha a loja
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && !charMenu.classList.contains('hidden')) { voltarDaLoja(); e.preventDefault(); }
+});
 btnRestart.onclick = () => { startMusic(); initGame(); };
 btnMenuGo.onclick = () => {
     state = 'menu'; // sem isto o Enter no menu reiniciava a partida e o fundo ficava parado

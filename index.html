@@ -47,29 +47,35 @@
 
         <!-- Character / Shop Menu -->
         <div id="character-menu" class="ui-panel hidden" style="max-height: 80vh; overflow-y: auto;">
-            <h2>Loja e Personagens</h2>
-            
-            <div class="carteira">
-                🌟 Suas Estrelas: <span id="shop-stars-display">0</span>
+            <!-- Barra fixa: fica no topo enquanto a loja rola -->
+            <div class="loja-topo">
+                <button id="btn-back" class="btn secondary btn-voltar" title="Voltar ao menu (Esc)">← Menu</button>
+                <h2>Loja</h2>
+                <div class="carteira">🌟 <span id="shop-stars-display">0</span></div>
+                <nav class="loja-atalhos" aria-label="Seções da loja">
+                    <button type="button" data-secao="secao-personagens">🦄 Personagens</button>
+                    <button type="button" data-secao="secao-poderes">⚡ Poderes</button>
+                    <button type="button" data-secao="secao-visual">🎀 Visual</button>
+                </nav>
             </div>
 
-            <h3 class="titulo-secao">🦄 Selecione ou Desbloqueie seu Personagem</h3>
+            <h3 class="titulo-secao" id="secao-personagens">🦄 Selecione ou Desbloqueie seu Personagem</h3>
             <div class="character-grid" id="character-grid">
                 <!-- Dynamically populated via JS -->
             </div>
 
-            <h3 class="titulo-secao">⚡ Poderes Adicionais Globais</h3>
+            <h3 class="titulo-secao" id="secao-poderes">⚡ Poderes Adicionais Globais</h3>
             <div class="character-grid" id="upgrades-grid">
                 <!-- Dynamically populated via JS -->
             </div>
 
-            <h3 class="titulo-secao">🎀 Visual do Personagem</h3>
+            <h3 class="titulo-secao" id="secao-visual">🎀 Visual do Personagem</h3>
             <div class="abas-visual" id="abas-visual" role="tablist"></div>
             <div class="character-grid" id="skins-grid">
                 <!-- Dynamically populated via JS -->
             </div>
 
-            <button id="btn-back" class="btn secondary" style="margin-top:20px;">Voltar ao Menu</button>
+            <button id="btn-back-fim" class="btn secondary" style="margin-top:20px;">Voltar ao Menu</button>
         </div>
 
         <!-- Leaderboard Menu -->
