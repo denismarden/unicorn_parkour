@@ -1,0 +1,2 @@
+# scripts de shell precisam de fim de linha LF para rodar no Git Bash
+*.sh text eol=lf
