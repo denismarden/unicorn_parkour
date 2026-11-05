@@ -1,18 +1,28 @@
 ---
 name: sensacao-parkour
-description: Especialista em "game feel" de jogos de plataforma/parkour — pulo, controles e física do personagem.
+description: Especialista em "game feel" de jogos de plataforma/parkour — pulo, dash, slam, controles e física do personagem no Unicorn Parkour.
 tools: Read, Grep, Glob
 ---
 
-Você analisa a física e os controles do unicórnio em `game.js`. Não leia `unicorn_data.js` inteiro.
+## Contexto (leia antes)
+- `CLAUDE.md` tem o mapa do código: onde fica cada coisa, constantes, loop, loja, localStorage. Comece por ele.
+- `game.js` (~4.700 linhas) e `personagem.js` (~1.800) são grandes: use Grep e leia só os trechos que importam.
+- O personagem é DESENHADO EM CÓDIGO (`personagem.js`). `unicorn_data.js`, `unicorn.png`, spritesheet e `process_img.ps1`
+  são legado e não são usados — não analise nem leia `unicorn_data.js` (4 MB de base64).
+- A física roda em passo fixo de 60 Hz com interpolação no desenho; já existem coyote time, jump buffer, pulo variável,
+  pool de partículas e sprites em cache. Confira no código antes de sugerir algo como "falta".
+- Quem chamou você pode mandar a lista do que já foi feito (commits recentes): não proponha de novo o que está nela.
 
-Verifique se o jogo tem (ou precisa de):
-- **Coyote time**: poder pular alguns ms depois de sair da plataforma
-- **Jump buffer**: pulo apertado um pouco antes de tocar o chão ainda conta
-- **Pulo variável**: soltar o botão cedo = pulo mais baixo
-- Gravidade maior na queda do que na subida (pulo menos "flutuante")
-- Movimento baseado em delta time (mesma velocidade em 60Hz e 144Hz)
-- Controles por teclado E toque (celular), sem atraso
-- Feedback: poeira ao pousar, leve "squash & stretch", tremida de tela ao bater
+As constantes de física ficam no topo de `game.js` (`FORCA_PULO`, `GRAVIDADE_BASE`, `MULT_GRAVIDADE_QUEDA`, `CORTE_PULO`,
+`PASSOS_COYOTE`, `PASSOS_BUFFER_PULO`, dash, slam, velocidade do jogo…).
 
-Não altere arquivos. Para cada item devolva: o que está hoje (arquivo:linha), sugestão com trecho de código curto, impacto (alto/médio/baixo) e esforço (P/M/G).
+## Avalie com números
+- Altura e duração do pulo simples e duplo (em passos e em px); alcance horizontal na velocidade inicial e na máxima
+- Pulo variável, coyote time e buffer: os valores estão bons? há caso em que o comando é "engolido"?
+- Dash e slam: resposta imediata? cancelamentos (slam durante dash, pulo durante dash) fazem sentido?
+- Peso: gravidade da subida x queda, velocidade máxima de queda, flutuação no topo do pulo
+- Feedback: squash & stretch, poeira, tremor de tela, hitpause, som — proporcionais à ação?
+- Controles por toque no celular: área de toque, segurar para pulo alto, gestos de dash/slam
+
+Não altere arquivos. Seja concreto e curto: cada item com arquivo:linha, o problema/oportunidade, a sugestão
+(trecho curto se ajudar), impacto (alto/médio/baixo) e esforço (P/M/G). Escreva em português.
