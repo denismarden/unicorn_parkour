@@ -63,7 +63,7 @@ const PALETA = {
     lua: '#FFE9B8',
     estrela: '#FFFFFF', estrelaQuente: '#FFE8B0',
     aurora: ['#7FFFD4', '#FF9EE5', '#B9A4FF'],
-    nuvem: '#FFFFFF', nuvemSombra: '#CBB8EE', nuvemContorno: '#4A2763',
+    nuvem: '#EEE8FF', nuvemSombra: '#C7B4EC', nuvemContorno: '#4A2763',   // nuvem lavanda: o herói é o ponto mais claro
     nuvemMovel: '#DDF0FF', nuvemChuva: '#B9B0CC',
     cristal: '#BFEFFF', cristalSombra: '#6FA8E8', cristalContorno: '#2A3A7A',
     barreira: ['#7FFFD4', '#B9A4FF'],
@@ -285,7 +285,7 @@ let obstaculos = []; // { tipo: 'espinho'|'barreira'|'bloco', plat, x, w, h, des
 // 10 TIPOS DE ESTRELA — cada tipo tem valor, visual e raridade
 // ─────────────────────────────────────────────────────────────────────────
 const STAR_TYPES = [
-    { id: 'comum', name: 'Estrela Comum', value: 10, size: 10, color: '#aaaaaa', glow: '#888888', points: 6, weight: 400 },
+    { id: 'comum', name: 'Estrela Comum', value: 10, size: 10, color: '#FFE08A', glow: '#FFC24A', points: 6, weight: 400 },
     { id: 'brilhante', name: 'Estrela Brilhante', value: 25, size: 12, color: '#ffff88', glow: '#ffdd00', points: 6, weight: 200 },
     { id: 'rara', name: 'Estrela Rara', value: 50, size: 14, color: '#00ddff', glow: '#00aaff', points: 7, weight: 120 },
     { id: 'superior', name: 'Estrela Superior', value: 100, size: 16, color: '#00ff88', glow: '#00cc44', points: 7, weight: 70 },
@@ -538,10 +538,6 @@ const MODS_FASE = {
 // ⚙️  CONFIGURE AQUI após criar seu projeto Firebase:
 const FIREBASE_URL = 'https://unicornparkour-8f6a2-default-rtdb.firebaseio.com/';
 
-// 🔑 Senha de admin criptografada (SHA-256 de "unicorn2024")
-// Para trocar: gere o hash em https://emn178.github.io/online-tools/sha256.html
-const ADMIN_PASSWORD_HASH = '26af5e5ee7c44cc8968b492f8b5bb861a8758d8653ce82ecf790a5f896c004d1';
-
 // Detecta modo admin via URL (?admin=1)
 const _urlParams = new URLSearchParams(window.location.search);
 const isAdminMode = _urlParams.has('admin');
@@ -549,11 +545,16 @@ const isAdminMode = _urlParams.has('admin');
 let leaderboard = [];
 let _firebaseAvailable = (FIREBASE_URL && FIREBASE_URL !== 'COLE_SUA_URL_AQUI');
 
-// SHA-256 via Web Crypto API (built-in no browser)
-async function sha256(message) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+// Endereço do placar no Firebase (sem barra dupla)
+const URL_PLACAR = FIREBASE_URL.replace(/\/+$/, '') + '/leaderboard.json';
+
+// Converte a resposta do Firebase ({id: recorde, ...}) no top 10 ordenado, ignorando entradas inválidas
+function topDezDe(data) {
+    if (!data || typeof data !== 'object' || data.error) return [];
+    return Object.values(data)
+        .filter(e => e && typeof e.score === 'number' && e.name)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
 }
 
 async function loadLeaderboard() {
@@ -562,16 +563,11 @@ async function loadLeaderboard() {
 
     if (_firebaseAvailable) {
         try {
-            const res = await fetch(`${FIREBASE_URL}/leaderboard.json`);
-            const data = await res.json();
-            if (data && typeof data === 'object') {
-                leaderboard = Object.values(data)
-                    .filter(e => e && typeof e.score === 'number' && e.name)
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, 10);
-            } else {
-                leaderboard = [];
-            }
+            // Baixa só o top 10 (precisa do ".indexOn": "score" das regras em database.rules.json).
+            // Se as regras ainda não foram publicadas, o Firebase recusa e baixamos a lista inteira.
+            let res = await fetch(`${URL_PLACAR}?orderBy=${encodeURIComponent('"score"')}&limitToLast=10`);
+            if (!res.ok) res = await fetch(URL_PLACAR);
+            leaderboard = topDezDe(await res.json());
             return leaderboard;
         } catch (err) {
             console.warn('Firebase indisponível, usando localStorage:', err);
@@ -583,18 +579,22 @@ async function loadLeaderboard() {
     return leaderboard;
 }
 
+// Salva um recorde. As regras do Firebase só permitem CRIAR recordes válidos (nunca editar nem apagar),
+// por isso o jogo não tenta mais "podar" a lista nem zerar o placar.
 async function addScoreOnline(entry) {
     if (_firebaseAvailable) {
         try {
-            await fetch(`${FIREBASE_URL}/leaderboard.json`, {
+            const res = await fetch(URL_PLACAR, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...entry, ts: Date.now() })
             });
-            // Prune: manter só os top 100 no Firebase para economizar espaço
-            await _pruneFirebase();
-            await loadLeaderboard();
-            return;
+            if (res.ok) {
+                await loadLeaderboard();
+                return;
+            }
+            console.warn('Firebase recusou o recorde:', res.status);
+            showToast('Não foi possível salvar no placar global agora.');
         } catch (err) {
             console.warn('Erro ao salvar no Firebase:', err);
         }
@@ -604,33 +604,6 @@ async function addScoreOnline(entry) {
     leaderboard.sort((a, b) => b.score - a.score);
     leaderboard = leaderboard.slice(0, 10);
     localStorage.setItem('unicornLeaderboard', JSON.stringify(leaderboard));
-}
-
-async function _pruneFirebase() {
-    try {
-        const res = await fetch(`${FIREBASE_URL}/leaderboard.json`);
-        const data = await res.json();
-        if (!data) return;
-        const entries = Object.entries(data)
-            .map(([key, val]) => ({ key, ...val }))
-            .sort((a, b) => b.score - a.score);
-        const toDelete = entries.slice(100); // mantém top 100
-        await Promise.all(toDelete.map(e =>
-            fetch(`${FIREBASE_URL}/leaderboard/${e.key}.json`, { method: 'DELETE' })
-        ));
-    } catch { }
-}
-
-async function clearLeaderboardOnline() {
-    if (_firebaseAvailable) {
-        try {
-            await fetch(`${FIREBASE_URL}/leaderboard.json`, { method: 'DELETE' });
-        } catch (err) {
-            console.warn('Erro ao limpar Firebase:', err);
-        }
-    }
-    leaderboard = [];
-    localStorage.removeItem('unicornLeaderboard');
 }
 
 function renderLeaderboard() {
@@ -652,7 +625,7 @@ function renderLeaderboard() {
         const nome = span('lb-name', String(entry.name).slice(0, 20));
         if (entry.charName) {
             const c = span('lb-char', ` (${String(entry.charName).slice(0, 20)} — Fase ${parseInt(entry.phase) || 1})`);
-            c.style.cssText = 'color:#00f0ff;font-size:0.85em;margin-left:5px;';
+            c.style.cssText = 'font-size:0.85em;margin-left:5px;';   // cor vem do style.css (.lb-char)
             nome.appendChild(c);
         }
         div.append(span('lb-rank', badge), nome, span('lb-score', `${Number(entry.score).toLocaleString()} pts`));
@@ -661,7 +634,7 @@ function renderLeaderboard() {
 
     if (_firebaseAvailable) {
         const note = document.createElement('p');
-        note.style.cssText = 'text-align:center;color:#555;font-size:0.75rem;margin-top:12px;';
+        note.style.cssText = 'text-align:center;color:#B9A4FF;font-size:0.75rem;margin-top:12px;';
         note.textContent = '🌐 Placar global — compartilhado entre todos os jogadores';
         list.appendChild(note);
     }
@@ -708,19 +681,11 @@ btnLeadBack.onclick = () => {
     mainMenu.classList.remove('hidden');
 };
 
-btnClearLeaderboard.onclick = async () => {
-    const pwd = prompt('🔑 Senha de administrador:');
-    if (!pwd) return;
-    const hash = await sha256(pwd);
-    if (hash === ADMIN_PASSWORD_HASH) {
-        if (confirm('⚠️ Apagar TODOS os recordes globais permanentemente?')) {
-            await clearLeaderboardOnline();
-            renderLeaderboard();
-            showToast('Placar zerado com sucesso!');
-        }
-    } else {
-        alert('❌ Senha incorreta!');
-    }
+// Zerar o placar global não é mais possível pelo jogo: as regras do Firebase (database.rules.json)
+// bloqueiam apagar, justamente para ninguém conseguir apagar pela URL. O dono zera pelo console.
+btnClearLeaderboard.onclick = () => {
+    alert('Para zerar o placar global: Firebase Console → Realtime Database → Dados → '
+        + 'passe o mouse em "leaderboard" e clique no X (excluir).');
 };
 
 btnMute.onclick = () => {
@@ -747,6 +712,14 @@ function playSound(type) {
         gain.gain.setValueAtTime(0.1, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
         osc.start(now); osc.stop(now + 0.1);
+    } else if (type === 'jump2') {
+        // pulo no ar: mais agudo e com um "brilhinho" no fim
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(1050, now + 0.12);
+        gain.gain.setValueAtTime(0.09, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
+        osc.start(now); osc.stop(now + 0.14);
     } else if (type === 'collect') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(800, now);
@@ -860,18 +833,11 @@ updateGlobalStarsDisplay();
 
 function showToast(msg) {
     let t = document.createElement('div');
+    t.className = 'toast';   // visual no style.css
     t.innerText = msg;
-    t.style.background = '#ffdd00';
-    t.style.color = '#000';
-    t.style.padding = '10px 20px';
-    t.style.borderRadius = '5px';
-    t.style.fontWeight = 'bold';
-    t.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)';
-    t.style.animation = 'slideDown 0.3s ease-out';
     toastContainer.appendChild(t);
     setTimeout(() => {
         t.style.opacity = '0';
-        t.style.transition = 'opacity 0.5s';
         setTimeout(() => t.remove(), 500);
     }, 3000);
 }
@@ -1045,47 +1011,266 @@ function buyUpgrade(id) {
     } else { alert("Estrelas insuficientes!"); }
 }
 
-function buySkin(id) {
-    let s = skins.find(x => x.id === id);
-    if (unlockedSkins.includes(id)) {
-        selectedSkin = id;
-        localStorage.setItem('uniparkourActiveSkin', selectedSkin);
-        renderCharMenu();
-        playSound('jump');
-    } else {
-        if (globalStars >= s.cost) {
-            if (confirm(`Desbloquear ${s.name} por ${s.cost} estrelas?`)) {
-                globalStars -= s.cost;
-                unlockedSkins.push(id);
-                selectedSkin = id;
-                localStorage.setItem('uniparkourGlobalStars', globalStars);
-                localStorage.setItem('uniparkourSkins', JSON.stringify(unlockedSkins));
-                localStorage.setItem('uniparkourActiveSkin', selectedSkin);
-                updateGlobalStarsDisplay();
-                renderCharMenu();
-                playSound('buy');
-            }
-        } else { alert("Estrelas insuficientes!"); }
+// ─────────────────────────────────────────────────────────────────────────
+// VISUAL DO PERSONAGEM (loja): auras, pelagens, rastros, chifres e chapéus
+// ─────────────────────────────────────────────────────────────────────────
+
+// Efeito de cada aura: forma das partículas, cores e movimento
+//  sobe = flutua para cima e fica para trás · cai = desce do alto · flutua = espalha em volta · faisca = estala rápido
+const AURA_EFEITO = {
+    golden: { forma: 'brilho', cores: ['#FFD54A', '#FFB300'], mov: 'sobe', brilho: '#FFD54A' },
+    shadow: { forma: 'fumaca', cores: ['#4B2A7A', '#2A1A4A'], mov: 'sobe' },
+    rainbow: { forma: 'brilho', cores: ['#FF5F7E', '#FFB347', '#FFE66D', '#7DDE92', '#6FC3FF', '#B387FF'], mov: 'flutua', brilho: '#FF9CCB' },
+    fire: { forma: 'chama', cores: ['#FF7A1A', '#FF4500'], mov: 'sobe', brilho: '#FF7A1A' },
+    ice: { forma: 'floco', cores: ['#CFF4FF', '#FFFFFF'], mov: 'cai', brilho: '#BFEFFF' },
+    electric: { forma: 'faisca', cores: ['#FFF176', '#9BE7FF'], mov: 'faisca', brilho: '#FFF176' },
+    nature: { forma: 'folha', cores: ['#4CD07D', '#9BE36B', '#FF9CCB'], mov: 'cai' },
+    void: { forma: 'fumaca', cores: ['#120A20', '#2A1A3A'], mov: 'sobe' },
+    galactic: { forma: 'estrela', cores: ['#C7A8F0', '#9BE7FF', '#FFE08A'], mov: 'flutua', brilho: '#B387FF' },
+    cyber: { forma: 'digito', cores: ['#39FF88', '#00C853'], mov: 'cai', brilho: '#39FF88' },
+    blood: { forma: 'gota', cores: ['#C62828', '#8E0000'], mov: 'cai' },
+    candy: { forma: 'confete', cores: ['#FF9CCB', '#9BE7FF', '#FFE08A', '#C7A8F0'], mov: 'flutua', brilho: '#FF9CCB' },
+    glitch: { forma: 'pixel', cores: ['#00FFFF', '#FF00FF'], mov: 'faisca', brilho: '#FF00FF' },
+    holy: { forma: 'brilho', cores: ['#FFFFFF', '#FFF3C4'], mov: 'sobe', brilho: '#FFF3C4' },
+    cursed: { forma: 'chama', cores: ['#39FF88', '#00A86B'], mov: 'sobe', brilho: '#39FF88' },
+    diamond: { forma: 'brilho', cores: ['#CFF4FF', '#FFFFFF'], mov: 'flutua', brilho: '#CFF4FF' },
+    bubble: { forma: 'bolha', cores: ['#9BE7FF', '#CFF4FF'], mov: 'sobe' },
+    sand: { forma: 'circulo', cores: ['#E6C88A', '#C9A56B'], mov: 'flutua' },
+    smoke: { forma: 'fumaca', cores: ['#8A8A9A', '#5A5A6A'], mov: 'sobe' },
+    plasma: { forma: 'faisca', cores: ['#FF4FD8', '#7C4DFF'], mov: 'faisca', brilho: '#B387FF' }
+};
+
+// Cada item: id único (salvo no localStorage), valor (o que o desenho usa), nome, descrição, preço
+const PELAGENS = [
+    { id: 'pel_nenhuma', valor: 'nenhuma', name: 'Lisa', desc: 'Sem estampa', cost: 0 },
+    { id: 'pel_bolinhas', valor: 'bolinhas', name: 'Dálmata', desc: 'Bolinhas pretas', cost: 6000 },
+    { id: 'pel_coracoes', valor: 'coracoes', name: 'Coraçõezinhos', desc: 'Estampa de amor', cost: 7000 },
+    { id: 'pel_listras', valor: 'listras', name: 'Zebra', desc: 'Listras onduladas', cost: 8000 },
+    { id: 'pel_oncinha', valor: 'oncinha', name: 'Oncinha', desc: 'Pintas de onça', cost: 9000 },
+    { id: 'pel_estrelas', valor: 'estrelas', name: 'Estrelado', desc: 'Estrelinhas douradas', cost: 10000 },
+    { id: 'pel_arcoiris', valor: 'arcoiris', name: 'Arco-Íris', desc: 'Faixas coloridas', cost: 15000 },
+    { id: 'pel_cromado', valor: 'cromado', name: 'Cromado', desc: 'Metal com reflexo passando', cost: 20000 },
+    { id: 'pel_galaxia', valor: 'galaxia', name: 'Galáxia', desc: 'Um céu estrelado no corpo', cost: 25000 }
+];
+const RASTROS = [
+    { id: 'ras_arcoiris', valor: 'arcoiris', name: 'Fita Arco-Íris', desc: 'Nas cores da crina', cost: 0 },
+    { id: 'ras_nenhum', valor: 'nenhum', name: 'Sem Rastro', desc: 'Discreto', cost: 0 },
+    { id: 'ras_coracoes', valor: 'coracoes', name: 'Corações', desc: 'Deixa amor pelo caminho', cost: 5000 },
+    { id: 'ras_estrelas', valor: 'estrelas', name: 'Estrelas', desc: 'Pó de estrela dourado', cost: 6000 },
+    { id: 'ras_bolhas', valor: 'bolhas', name: 'Bolhas', desc: 'Bolhas de sabão', cost: 6000 },
+    { id: 'ras_petalas', valor: 'petalas', name: 'Pétalas', desc: 'Chuva de cerejeira', cost: 8000 },
+    { id: 'ras_notas', valor: 'notas', name: 'Notas Musicais', desc: 'Corre no ritmo', cost: 9000 },
+    { id: 'ras_chamas', valor: 'chamas', name: 'Chamas', desc: 'Pegando fogo', cost: 12000 },
+    { id: 'ras_raio', valor: 'raio', name: 'Raio', desc: 'Velocidade elétrica', cost: 15000 }
+];
+const CHIFRES = [
+    { id: 'chi_dourado', valor: 'dourado', name: 'Dourado', desc: 'O clássico', cost: 0 },
+    { id: 'chi_rosa', valor: 'rosa', name: 'Pérola Rosa', desc: 'Delicado e brilhante', cost: 4000 },
+    { id: 'chi_gelo', valor: 'gelo', name: 'Gelo', desc: 'Frio que brilha', cost: 6000 },
+    { id: 'chi_cristal', valor: 'cristal', name: 'Cristal', desc: 'Transparente como vidro', cost: 8000 },
+    { id: 'chi_chocolate', valor: 'chocolate', name: 'Chocolate', desc: 'Com granulado!', cost: 9000 },
+    { id: 'chi_neon', valor: 'neon', name: 'Neon', desc: 'Acende no escuro', cost: 12000 },
+    { id: 'chi_arcoiris', valor: 'arcoiris', name: 'Arco-Íris', desc: 'Espiral colorida', cost: 15000 },
+    { id: 'chi_estelar', valor: 'estelar', name: 'Estelar', desc: 'Feito de noite', cost: 18000 }
+];
+const CHAPEUS = [
+    { id: 'cha_nenhum', valor: 'nenhum', name: 'Nenhum', desc: 'Usa o acessório do personagem', cost: 0 },
+    { id: 'cha_laco', valor: 'laco', name: 'Laçarote', desc: 'Um laço enorme', cost: 4000 },
+    { id: 'cha_flores', valor: 'flores', name: 'Coroa de Flores', desc: 'Primavera o ano todo', cost: 6000 },
+    { id: 'cha_festa', valor: 'festa', name: 'Chapéu de Festa', desc: 'Todo dia é aniversário', cost: 6000 },
+    { id: 'cha_orelhasGato', valor: 'orelhasGato', name: 'Tiara de Gatinho', desc: 'Miau!', cost: 7000 },
+    { id: 'cha_oculosCoracao', valor: 'oculosCoracao', name: 'Óculos de Coração', desc: 'Apaixonado pela corrida', cost: 8000 },
+    { id: 'cha_fones', valor: 'fones', name: 'Fones de Ouvido', desc: 'Correndo com música', cost: 10000 },
+    { id: 'cha_gorro', valor: 'gorro', name: 'Gorro de Natal', desc: 'Ho ho ho!', cost: 10000 },
+    { id: 'cha_cartola', valor: 'cartola', name: 'Cartola', desc: 'Elegância mágica', cost: 14000 }
+];
+const CATEGORIAS_VISUAL = [
+    { id: 'aura', nome: '✨ Auras', itens: () => skins },
+    { id: 'pelagem', nome: '🎨 Pelagens', itens: () => PELAGENS },
+    { id: 'rastro', nome: '🌈 Rastros', itens: () => RASTROS },
+    { id: 'chifre', nome: '🦄 Chifres', itens: () => CHIFRES },
+    { id: 'chapeu', nome: '🎩 Chapéus', itens: () => CHAPEUS }
+];
+
+// O que está equipado (ids). A aura continua em selectedSkin (compatível com o save antigo).
+const VISUAL_PADRAO = { pelagem: 'pel_nenhuma', rastro: 'ras_arcoiris', chifre: 'chi_dourado', chapeu: 'cha_nenhum' };
+let visualEquipado = { ...VISUAL_PADRAO, ...(JSON.parse(localStorage.getItem('uniparkourVisual')) || {}) };
+let abaVisual = 'pelagem';
+
+const itemPorId = (cat, id) => CATEGORIAS_VISUAL.find(c => c.id === cat).itens().find(i => i.id === id);
+const possuiVisual = (item) => item.cost === 0 || unlockedSkins.includes(item.id);
+const equipadoNaCategoria = (cat) => cat === 'aura' ? selectedSkin : visualEquipado[cat];
+
+// Converte os ids equipados nos valores que o desenho do personagem usa (p.visual)
+function visualParaDesenho(equip = visualEquipado) {
+    const v = {};
+    for (const cat of ['pelagem', 'rastro', 'chifre', 'chapeu']) {
+        const item = itemPorId(cat, equip[cat]) || itemPorId(cat, VISUAL_PADRAO[cat]);
+        v[cat] = item.valor;
     }
+    return v;
+}
+
+function escolherVisual(cat, item) {
+    const equipar = () => {
+        if (cat === 'aura') { selectedSkin = item.id; localStorage.setItem('uniparkourActiveSkin', selectedSkin); }
+        else { visualEquipado[cat] = item.id; localStorage.setItem('uniparkourVisual', JSON.stringify(visualEquipado)); }
+    };
+    if (possuiVisual(item)) {
+        equipar();
+        playSound('jump');
+    } else if (globalStars < item.cost) {
+        alert('Estrelas insuficientes!');
+        return;
+    } else if (confirm(`Desbloquear ${item.name} por ${item.cost} estrelas?`)) {
+        globalStars -= item.cost;
+        unlockedSkins.push(item.id);
+        localStorage.setItem('uniparkourGlobalStars', globalStars);
+        localStorage.setItem('uniparkourSkins', JSON.stringify(unlockedSkins));
+        equipar();
+        updateGlobalStarsDisplay();
+        playSound('buy');
+    } else return;
+    renderCharMenu();
+}
+
+// Desenha uma "partícula" de qualquer forma (usado no jogo e na prévia da loja)
+function desenharFormaParticula(ctx, forma, cor, x, y, tam, rot = 0, texto = '1') {
+    if (forma === 'brilho') { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(spriteEstrelinha(cor), -tam / 2, -tam / 2, tam, tam); ctx.restore(); }
+    else if (forma === 'fumaca' || forma === 'poeira') ctx.drawImage(spritePoeira(cor), x - tam / 2, y - tam / 2, tam, tam);
+    else if (forma === 'confete' || forma === 'pixel') {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(forma === 'pixel' ? 0 : rot);
+        ctx.fillStyle = cor; ctx.fillRect(-tam * 0.25, -tam * (forma === 'pixel' ? 0.25 : 0.12), tam * 0.5, tam * (forma === 'pixel' ? 0.5 : 0.24));
+        ctx.restore();
+    } else if (forma === 'digito') {
+        ctx.font = `700 ${Math.round(tam * 0.8)}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = cor; ctx.fillText(texto, x, y);
+    } else if (forma === 'faisca') {
+        ctx.strokeStyle = cor; ctx.lineWidth = Math.max(1, tam * 0.12); ctx.lineJoin = 'miter';
+        ctx.beginPath();
+        let px = x, py = y;
+        ctx.moveTo(px, py);
+        for (let i = 0; i < 3; i++) { px += Math.cos(rot) * tam * 0.3 + (i % 2 ? 1 : -1) * tam * 0.15; py += Math.sin(rot) * tam * 0.3; ctx.lineTo(px, py); }
+        ctx.stroke();
+    } else if (forma === 'circulo') { ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(x, y, tam * 0.25, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(spriteForma(forma, cor), -tam / 2, -tam / 2, tam, tam); ctx.restore(); }
+}
+
+// Solta partículas da aura equipada em volta do jogador (chamado a cada passo de física)
+function emitirAura(efeito) {
+    if (!efeito || frames % 4 !== 0) return;
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2, cor = efeito.cores[Math.floor(Math.random() * efeito.cores.length)];
+    const base = { forma: efeito.forma, color: cor, life: 1, size: 5 + Math.random() * 3, texto: Math.random() < 0.5 ? '0' : '1' };
+    if (efeito.mov === 'sobe') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w, y: cy + player.h * 0.3, vx: (Math.random() - 0.5) * 0.6, vy: -1.5 - Math.random() * 1.5, noMundo: true });
+    else if (efeito.mov === 'cai') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w * 1.6, y: cy - player.h * 1.2, vx: (Math.random() - 0.5) * 0.6, vy: 1 + Math.random(), noMundo: true });
+    else if (efeito.mov === 'faisca') Object.assign(base, { x: cx + (Math.random() - 0.5) * player.w, y: cy + (Math.random() - 0.5) * player.h, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 0.5 });
+    else Object.assign(base, { x: cx, y: cy, vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3 });
+    if (base.forma === 'fumaca') base.size = 8 + Math.random() * 4;
+    emitirParticula(base);
+}
+
+// Abas + cards com prévia ao vivo do personagem usando o item
+function renderVisual() {
+    const abas = document.getElementById('abas-visual');
+    abas.innerHTML = '';
+    CATEGORIAS_VISUAL.forEach(cat => {
+        const b = document.createElement('button');
+        b.className = 'aba-visual' + (cat.id === abaVisual ? ' ativa' : '');
+        b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', cat.id === abaVisual);
+        b.textContent = cat.nome;
+        b.onclick = () => { abaVisual = cat.id; renderCharMenu(); };
+        abas.appendChild(b);
+    });
+    skinsGrid.innerHTML = '';
+    const cat = CATEGORIAS_VISUAL.find(c => c.id === abaVisual);
+    // chifre só aparece em unicórnio: a prévia usa o Padrão se o personagem escolhido não tiver chifre
+    const charPrevia = (abaVisual === 'chifre' && especieDe(characters[selectedChar]).chifre !== 'unicornio') ? characters[0] : characters[selectedChar];
+    cat.itens().forEach(item => {
+        const tem = possuiVisual(item), equipado = equipadoNaCategoria(abaVisual) === item.id;
+        const card = document.createElement('div');
+        card.className = `char-card ${equipado ? 'selected' : ''} ${tem ? '' : 'bloqueado'}`;
+        card.onclick = () => escolherVisual(abaVisual, item);
+        const retrato = document.createElement('canvas');
+        retrato.className = 'retrato';
+        const equipPrevia = { ...visualEquipado };
+        if (abaVisual !== 'aura') equipPrevia[abaVisual] = item.id;
+        const extra = abaVisual === 'aura' ? { aura: AURA_EFEITO[item.id] || null } : abaVisual === 'rastro' ? { rastro: true } : {};
+        retratosPendentes.push([retrato, charPrevia, visualParaDesenho(equipPrevia), extra]);
+        card.innerHTML = `<div class="char-name">${item.name}</div><div class="char-desc">${item.desc}</div>` +
+            `<div style="font-weight:bold; white-space:nowrap; color:${tem ? '#9BE7FF' : '#FFE08A'}">${tem ? (equipado ? 'EQUIPADO' : 'USAR') : '🔒 ' + item.cost + ' ⭐'}</div>`;
+        card.insertBefore(retrato, card.firstChild);
+        skinsGrid.appendChild(card);
+    });
+}
+
+// Retrato de verdade de cada personagem na loja (o mesmo desenho do jogo, parado no meio da passada).
+// Só desenha depois que o jogo terminou de carregar (as funções de pose ficam mais abaixo no arquivo).
+var retratosLiberados = false;
+const retratosPendentes = [];
+function desenharRetrato(cv, char, visual, extra = {}) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = 140 * dpr; cv.height = 104 * dpr;
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // disco claro atrás: personagens escuros não somem no fundo roxo do card
+    const disco = g.createRadialGradient(70, 56, 4, 70, 56, 48);
+    disco.addColorStop(0, 'rgba(255,240,255,0.22)');
+    disco.addColorStop(1, 'rgba(255,240,255,0)');
+    g.fillStyle = disco; g.fillRect(0, 0, 140, 104);
+    g.setTransform(dpr * 0.88, 0, 0, dpr * 0.88, 0, 0);
+    const p = {
+        char, w: 50, h: 40, rot: 0, spin: 0, scaleX: 1, scaleY: 1, vy: 0, onGround: true, mistura: 0,
+        runPhase: 0.12 / FATOR_FASE_GALOPE, poseAr: { fl: -35, fr: -15, bl: 25, br: 5 },
+        hurtFrames: 0, sorriso: 1, piscar: 100, assustado: false,
+        visual: visual || visualParaDesenho(), x: 55, y: 58
+    };
+    // prévia da aura: brilho + algumas partículas espalhadas em volta
+    if (extra.aura) {
+        const ef = extra.aura;
+        if (ef.brilho) {
+            g.save(); g.globalCompositeOperation = 'lighter';
+            g.drawImage(spriteLuz(ef.brilho), 55 - 75, 58 - 70, 150, 140);
+            g.restore();
+        }
+        const pos = [[18, 30], [96, 22], [30, 88], [100, 80], [62, 14], [12, 62], [108, 52], [80, 98]];
+        pos.forEach(([x, y], i) => {
+            g.save();
+            if (ef.forma === 'brilho' || ef.forma === 'faisca') g.globalCompositeOperation = 'lighter';
+            desenharFormaParticula(g, ef.forma, ef.cores[i % ef.cores.length], x, y, ef.forma === 'fumaca' ? 22 : 13, i * 0.9, i % 2 ? '1' : '0');
+            g.restore();
+        });
+    }
+    // prévia do rastro: um caminho ondulado saindo da cauda para a esquerda
+    if (extra.rastro) {
+        const raiz = pontoLocalNaTela(p, RAIZ_CAUDA[0], RAIZ_CAUDA[1], 1.3);
+        p.rastro = [];
+        for (let i = 0; i < 14; i++) p.rastro.push({ x: raiz.x - i * 6, y: raiz.y + Math.sin(i * 0.6) * 5 + i * 0.6 });
+        p.alfaFita = 1; p.onGround = false;
+        desenharRastro(g, p, 0, 8, paletaDe(char), 0.3);
+        p.onGround = true;
+    }
+    desenharUnicornio(g, 55, 58, p, 0.3, 1.3);   // enquadrado para a cabeça maior
+}
+function desenharRetratosPendentes() {
+    if (!retratosLiberados) return;
+    while (retratosPendentes.length) { const [cv, char, visual, extra] = retratosPendentes.shift(); desenharRetrato(cv, char, visual, extra); }
 }
 
 function renderCharMenu() {
     charGrid.innerHTML = '';
+    retratosPendentes.length = 0;
     characters.forEach(char => {
         const card = document.createElement('div');
-        card.className = `char-card ${char.id === selectedChar ? 'selected' : ''}`;
-        card.onclick = () => selecionarPersonagem(char);
         const liberado = unlockedChars.includes(char.id);
-        if (!liberado) card.style.opacity = '0.75';
-        const preview = document.createElement('div'); preview.className = 'char-color-preview'; preview.style.backgroundColor = char.body;
-        const mane = document.createElement('div');
-        mane.style.position = 'absolute'; mane.style.top = '-5px'; mane.style.right = '-15px'; mane.style.width = '70px'; mane.style.height = '40px';
-        mane.style.background = `linear-gradient(135deg, ${char.mane[0]}, ${char.mane[1]})`; mane.style.transform = 'rotate(45deg)';
-        preview.appendChild(mane);
+        card.className = `char-card ${char.id === selectedChar ? 'selected' : ''} ${liberado ? '' : 'bloqueado'}`;
+        card.onclick = () => selecionarPersonagem(char);
+        const retrato = document.createElement('canvas');
+        retrato.className = 'retrato';
+        retratosPendentes.push([retrato, char]);
 
         card.innerHTML += `<div class="char-name">${char.name}</div><div class="char-desc">${char.desc}</div>` +
-            `<div style="font-weight:bold; white-space:nowrap; color:${liberado ? '#00f0ff' : '#ffdd00'}">${liberado ? (char.id === selectedChar ? 'EQUIPADO' : 'USAR') : '🔒 ' + char.cost + ' ⭐'}</div>`;
-        card.insertBefore(preview, card.firstChild);
+            `<div style="font-weight:bold; white-space:nowrap; color:${liberado ? '#9BE7FF' : '#FFE08A'}">${liberado ? (char.id === selectedChar ? 'EQUIPADO' : 'USAR') : '🔒 ' + char.cost + ' ⭐'}</div>`;
+        card.insertBefore(retrato, card.firstChild);
         charGrid.appendChild(card);
     });
 
@@ -1102,28 +1287,13 @@ function renderCharMenu() {
             <div style="font-size:2rem; margin-bottom:10px;">${isMax ? '⭐' : '⚡'}</div>
             <div class="char-name">${u.name} (Nvl ${cur}/${u.maxLevel})</div>
             <div class="char-desc">${u.desc}</div>
-            <div style="margin-top:10px; font-weight:bold; color:${isMax ? '#00ff00' : '#ffdd00'}">${isMax ? 'MÁXIMO' : price + ' ⭐'}</div>
+            <div style="margin-top:10px; font-weight:bold; color:${isMax ? '#9BE7FF' : '#FFE08A'}">${isMax ? 'MÁXIMO' : price + ' ⭐'}</div>
         `;
         upgradesGrid.appendChild(card);
     });
 
-    skinsGrid.innerHTML = '';
-    skins.forEach(s => {
-        const isUnlocked = unlockedSkins.includes(s.id);
-        const card = document.createElement('div');
-        card.className = `char-card ${s.id === selectedSkin ? 'selected' : ''}`;
-        card.onclick = () => buySkin(s.id);
-
-        let visual = s.type !== 'none' ? `<div style="width:40px; height:40px; margin:0 auto 10px; border-radius:50%; background:linear-gradient(45deg, ${s.colors[0]}, ${s.colors[1]}); border: 2px solid #fff; box-shadow: 0 0 10px ${s.colors[0]}"></div>` : '<div style="font-size:2rem; margin-bottom:10px;">🦄</div>';
-
-        card.innerHTML = `
-            ${visual}
-            <div class="char-name">${s.name}</div>
-            <div class="char-desc">${s.desc}</div>
-            <div style="margin-top:10px; font-weight:bold; color:${isUnlocked ? '#00f0ff' : '#ffdd00'}">${isUnlocked ? (s.id === selectedSkin ? 'EQUIPADO' : 'USAR') : s.cost + ' ⭐'}</div>
-        `;
-        skinsGrid.appendChild(card);
-    });
+    renderVisual();
+    desenharRetratosPendentes();
 }
 renderCharMenu();
 
@@ -1142,10 +1312,12 @@ function initGame() {
     stars = [];
     feathers = [];
     limparParticulas();
+    limparInputs();      // nenhum botão "preso" da partida anterior
     // Zera tudo que poderia vazar da partida anterior
     powerupItems = [];
     obstaculos = [];
     floatingTexts = [];
+    aneis = [];
     isSlamming = false;
     isDashing = false; dashCooldown = 0; dashTimeLeft = 0;
     screenShake = 0; sleepFrames = 0;
@@ -1205,6 +1377,7 @@ function initGame() {
         jumps: 0,
         onGround: false,
         char: selectedCharObj,
+        visual: visualParaDesenho(),   // pelagem, rastro, chifre e chapéu escolhidos na loja
         spin: 0,
         scaleX: 1, scaleY: 1,
         // Atributos do personagem
@@ -1416,8 +1589,19 @@ function generateWorld() {
 }
 
 // Pulo: faíscas pastel + um "puf" de nuvem embaixo dos cascos
-function spawnJumpParticles() {
+function spawnJumpParticles(noAr = false) {
     const x = player.x + player.w / 2, y = player.y + player.h;
+    if (noAr) {
+        // pulo no ar: anel de brilhos saindo do corpo (sem "puf" de nuvem flutuando)
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            emitirParticula({
+                x, y: y - player.h * 0.4, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3,
+                life: 0.7, size: 4.5, forma: 'brilho', color: PALETA.particulas[i % PALETA.particulas.length]
+            });
+        }
+        return;
+    }
     for (let i = 0; i < 7; i++) {
         emitirParticula({
             x, y, vx: (Math.random() - 0.5) * 6, vy: Math.random() * 2.5,
@@ -1426,12 +1610,31 @@ function spawnJumpParticles() {
         });
     }
     for (let i = 0; i < 3; i++) {
-        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira' });
+        emitirParticula({ x: x + (i - 1) * 8, y, vx: (i - 1) * 1.2, vy: 0.4, life: 0.6, size: 6, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
     }
+}
+
+// Existe chão logo abaixo dos pés (até `dist` px)?
+function chaoAbaixo(dist) {
+    const pRealX = distance + player.x, margem = player.w * 0.2, pes = player.y + player.h;
+    for (const p of platforms) {
+        if (p.caindo) continue;
+        if (pRealX + player.w - margem > p.x && pRealX + margem < p.x + p.w && p.y >= pes - 2 && p.y - pes <= dist) return true;
+    }
+    return false;
+}
+
+// Copia o valor atual para o "anterior" da interpolação: evita desenhar um salto (ex.: 0 → -2π) num quadro
+function semInterpolar(...campos) {
+    if (!player || !player.ant) return;
+    for (const k of campos) player.ant[k] = player[k];
 }
 
 function jump() {
     if (state !== 'playing' || isPaused) return;
+
+    // o pulo cancela o dash (vira um "dash-jump"); a recarga continua
+    if (dashTimeLeft > 0) { dashTimeLeft = 0; isDashing = false; }
 
     if (isFlying) {
         player.vy = player.jumpPower * 0.8;
@@ -1442,7 +1645,15 @@ function jump() {
         return;
     }
 
+    // Caindo quase no chão com o pulo do ar sobrando: guarda para pular do chão (não gasta o pulo duplo à toa)
+    if (!player.onGround && player.vy > 0 && player.jumps > 0 && !isInfJumpActive && !isHoverActive
+        && chaoAbaixo(Math.max(12, player.vy * 3))) {
+        player.bufferPulo = PASSOS_BUFFER_PULO;
+        return;
+    }
+
     if (player.jumps < player.maxJumps || isInfJumpActive || isHoverActive) {
+        const noAr = !player.onGround && player.coyote <= 0;
         player.vy = player.jumpPower;
         player.jumps++;
         player.onGround = false;
@@ -1452,8 +1663,8 @@ function jump() {
         // Pulo disparado pelo buffer depois que o botão já foi solto: sai baixo (toque rápido = pulo baixo)
         if (!puloSegurado) { player.vy *= CORTE_PULO; player.podeCortarPulo = false; }
         isSlamming = false;
-        player.scaleX = 0.5; // Esticada extrema
-        player.scaleY = 1.6;
+        player.scaleX = noAr ? 0.7 : 0.5; // esticada (menor no ar)
+        player.scaleY = noAr ? 1.35 : 1.6;
 
         // Mortal para trás no pulo duplo (ou a cada 2 pulos no pulo infinito)
         if (player.jumps % 2 === 0) {
@@ -1461,10 +1672,11 @@ function jump() {
             player.giroT = 0;
             player.giroRapido = false;
         }
+        semInterpolar('spin', 'scaleX', 'scaleY');
 
-        playSound('jump');
+        playSound(noAr ? 'jump2' : 'jump');
         checkMission('jumps', 1);
-        spawnJumpParticles();
+        spawnJumpParticles(noAr);
     } else {
         // Sem pulos sobrando: guarda o pedido e pula assim que pousar (jump buffer)
         player.bufferPulo = PASSOS_BUFFER_PULO;
@@ -1493,13 +1705,15 @@ function doDash() {
     dashTimeLeft = DURACAO_DASH;
     dashCooldown = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
     isSlamming = false; // o dash cancela o slam (e o bônus dele)
+    player.vy = 0;      // trava a altura já no primeiro passo
     playSound('dash');
     checkMission('dashes', 1);
 }
 
 function doSlam() {
     if (state !== 'playing' || isPaused) return;
-    if (player.onGround || dashTimeLeft > 0) return; // não dá slam no chão nem no meio do dash
+    if (player.onGround) return; // não dá slam no chão
+    if (dashTimeLeft > 0) { dashTimeLeft = 0; isDashing = false; } // o slam cancela o dash
     player.vy = VEL_SLAM;
     player.podeCortarPulo = false;
     isSlamming = true;
@@ -1551,8 +1765,16 @@ window.addEventListener('keyup', (e) => {
     if (TECLAS_PULO.includes(e.code)) soltarPulo();
 });
 
+// Ao perder o foco (alt-tab, trocar de aba) o "soltar" do botão se perde: limpa tudo que está segurado
+function limparInputs() {
+    if (typeof ponteirosPulo !== 'undefined') ponteirosPulo.clear();
+    puloSegurado = false;
+}
+window.addEventListener('blur', limparInputs);
+
 // Pausa sozinho ao trocar de aba / minimizar
 document.addEventListener('visibilitychange', () => {
+    if (document.hidden) limparInputs();
     if (document.hidden && state === 'playing' && !isPaused) alternarPausa();
 });
 
@@ -2662,6 +2884,8 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
         ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
     }
     ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.strokeStyle = PALETA.textoContorno; ctx.lineWidth = 2;   // contorno: separa do fundo estrelado
+    ctx.stroke();
     ctx.fill();
 
     // Brilho central (estrelas raras+)
@@ -2689,7 +2913,7 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
     // Label de valor para estrelas supremas+ (hard to miss)
     if (st.value >= 2500) {
         ctx.save();
-        ctx.font = `bold ${Math.max(9, Math.floor(sz * 0.55))}px sans-serif`;
+        ctx.font = `700 ${Math.max(9, Math.floor(sz * 0.55))}px ${FONTE_JOGO}`;
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 3;
@@ -2855,7 +3079,17 @@ function setTexto(el, txt) {
     if (el._txt !== txt) { el._txt = txt; el.textContent = txt; }
 }
 
+const faseDisplay = document.getElementById('fase-display');
+let faseDisplayIdx = -1;
 function updateHUD() {
+    // pílula da fase: nome completo no computador, curto no celular; a borda leva a cor da fase
+    const estreito = (gameContainer.clientWidth || cw) < 600;
+    const ph = PHASES[currentPhase];
+    setTexto(faseDisplay, estreito ? `✦ Fase ${currentPhase + 1}/${PHASES.length} ✦` : `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`);
+    if (faseDisplayIdx !== currentPhase) {
+        faseDisplayIdx = currentPhase;
+        faseDisplay.style.setProperty('--cor-fase', FASES_VISUAL[currentPhase].platform.edge);
+    }
     setTexto(scoreDisplay, String(Math.floor(score)));
     setTexto(starsDisplay, String(Math.round(starsCollected)));
     setTexto(speedDisplay, (gameSpeed / (window.innerWidth > 800 ? 7 : 5)).toFixed(1));
@@ -2904,11 +3138,15 @@ function loop(agora) {
 // ─── Interpolação entre passos de física ───
 // A física roda a 60 passos/s; em telas de 120/144 Hz desenhamos o estado "entre" dois passos
 // para a rolagem e o personagem andarem lisos em vez de aos trancos.
-const CAMPOS_INTERP = ['y', 'rot', 'spin', 'runPhase', 'mistura', 'scaleX', 'scaleY', 'w', 'h'];
+const CAMPOS_INTERP = ['y', 'vy', 'rot', 'spin', 'runPhase', 'mistura', 'scaleX', 'scaleY', 'w', 'h'];
 let distAnt = 0;
+// Relógio da animação (crina, asas, brilhos): anda com a câmera lenta, para no hit-pause e é interpolado
+let tempoAnim = 0, tempoAnimAnt = 0, tempoRender = 0;
+let alfaRender = 1;   // fração entre o passo anterior e o atual (usada também por partículas)
 
 function guardarEstadoAnterior() {
     distAnt = distance;
+    tempoAnimAnt = tempoAnim;
     if (!player) return;
     player.ant = player.ant || {};
     for (const k of CAMPOS_INTERP) player.ant[k] = player[k];
@@ -2916,9 +3154,14 @@ function guardarEstadoAnterior() {
 }
 
 function renderInterpolado(alfa) {
-    if (!player || !player.ant || state === 'dying' && passosMorte >= PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) { render(); return; }
+    if (!player || !player.ant || state === 'dying' && passosMorte >= PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) {
+        tempoRender = tempoAnim; alfaRender = 1;
+        render(); return;
+    }
     alfa = Math.max(0, Math.min(1, alfa));
     const lerp = (a, b) => a + (b - a) * alfa;
+    alfaRender = alfa;
+    tempoRender = lerp(tempoAnimAnt, tempoAnim);
     // troca temporariamente os valores reais pelos interpolados, desenha e restaura
     const real = { distance };
     for (const k of CAMPOS_INTERP) real[k] = player[k];
@@ -2930,6 +3173,7 @@ function renderInterpolado(alfa) {
     platforms.forEach((p, i) => { p.y = platY[i]; });
     for (const k of CAMPOS_INTERP) player[k] = real[k];
     distance = real.distance;
+    alfaRender = 1;
 }
 
 const DICAS_TUTORIAL = [
@@ -2975,6 +3219,7 @@ function step() {
     // Câmera lenta desacelera a física inteira (o alcance do pulo não muda), com transição suave
     escalaTempo += ((isSlowMoActive ? ESCALA_SLOWMO : 1) - escalaTempo) * SUAVIZACAO_SLOWMO;
     const ts = escalaTempo;
+    tempoAnim += PASSO_FISICA * ts;
 
     // Textos flutuantes
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
@@ -3029,7 +3274,8 @@ function step() {
     if (phaseAnnounceFrames > 0) phaseAnnounceFrames--;
 
     // ── Gravidade: queda mais pesada que a subida, com velocidade máxima ──
-    let currentGravity = isFlying ? player.gravity * 0.4 : player.gravity;
+    if (dashTimeLeft > 0) player.vy = 0;   // no dash a altura fica travada desde o primeiro passo
+    let currentGravity = dashTimeLeft > 0 ? 0 : (isFlying ? player.gravity * 0.4 : player.gravity);
     if (player.vy > 0 && !isFlying && !isHoverActive) currentGravity *= MULT_GRAVIDADE_QUEDA;
     if (isMeteorActive && !player.onGround && player.vy > 0) currentGravity *= 2.5;
     player.vy += currentGravity * ts;
@@ -3058,7 +3304,7 @@ function step() {
     // Dash
     if (dashCooldown > 0) dashCooldown -= dt;
     if (dashTimeLeft > 0) {
-        dashTimeLeft -= dt;
+        dashTimeLeft -= dt * ts;   // na câmera lenta o dash dura mais e mantém o alcance
         isDashing = true;
         // Entrada e saída suaves (curva seno); MULT_CURVA_DASH mantém a distância total do dash
         const tDash = 1 - Math.max(0, dashTimeLeft) / DURACAO_DASH;
@@ -3149,7 +3395,13 @@ function step() {
         if (ob.destruido) continue;
         if (ob.plat.caindo) { ob.destruido = true; continue; }
         const topo = ob.plat.y - ob.h;
-        if (!(pRealRight > ob.x && pRealLeft < ob.x + ob.w && player.y + player.h > topo && player.y + 4 < ob.plat.y)) continue;
+        const dentroX = pRealRight > ob.x && pRealLeft < ob.x + ob.w;
+        // em cima de um bloco que está numa plataforma descendo: continua colado (sem "pousar" de novo a cada 2 passos)
+        if (ob.tipo === 'bloco' && dentroX && wasGrounded && player.vy >= 0) {
+            const pdy = ob.plat.dy || 0, pes = player.y + player.h;
+            if (pdy > 0 && pes >= topo - pdy - 2 && pes <= topo + 12) { aoPousar(topo, true); continue; }
+        }
+        if (!(dentroX && player.y + player.h > topo && player.y + 4 < ob.plat.y)) continue;
 
         if (ob.tipo === 'bloco' && player.vy >= 0 && player.y + player.h - dyPasso <= topo + 10) {
             // Pousou em cima do bloco: slam quebra, senão funciona como chão
@@ -3207,6 +3459,7 @@ function step() {
             let burstColor = st.glow || '#ffdd00';
             for (let i = 0; i < 8; i++) emitirParticula({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 5, forma: 'brilho' });
 
+            aneis.push({ x: s.x - distance, y: s.y, cor: burstColor, t: 0 });   // anel que expande ao coletar
             floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal}`, life: 1.0, color: burstColor });
             sleepFrames = 2; // micro hit-pause
 
@@ -3254,19 +3507,10 @@ function step() {
             size: Math.random() * 8 + 4
         });
     }
-    // Partículas da aura (antes eram criadas dentro do render)
-    if (selectedSkin !== 'default' && frames % 4 === 0) {
-        const auraConfig = skins.find(s => s.id === selectedSkin);
-        if (auraConfig && auraConfig.colors) {
-            emitirParticula({
-                x: player.x + player.w / 2, y: player.y + player.h / 2,
-                vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4,
-                life: 1, color: Math.random() > 0.5 ? auraConfig.colors[0] : auraConfig.colors[1], size: 4
-            });
-        }
-    }
+    // Partículas da aura: cada aura tem a sua forma e o seu movimento (AURA_EFEITO)
+    if (selectedSkin !== 'default') emitirAura(AURA_EFEITO[selectedSkin]);
 
-    atualizarParticulas();
+    atualizarParticulas(effectiveSpeed);   // poeira no chão rola junto com o mundo
 
     if (player.y > ch) caiuNoBuraco();
 }
@@ -3285,21 +3529,42 @@ function emitirParticula(o) {
     }
     if (!s) { s = poolParticulas[cursorParticula % MAX_PARTICULAS]; cursorParticula++; }
     s.ativa = true;
-    s.x = o.x; s.y = o.y; s.vx = o.vx || 0; s.vy = o.vy || 0;
+    s.x = o.x; s.y = o.y; s.xAnt = o.x; s.yAnt = o.y; s.noMundo = !!o.noMundo; s.vx = o.vx || 0; s.vy = o.vy || 0;
     s.life = o.life || 1; s.vida0 = s.life;
     s.color = o.color || '#ffffff'; s.size = o.size || 3;
     s.forma = o.forma || 'circulo'; s.gravidade = o.gravidade || 0;
     s.rot = Math.random() * Math.PI; s.vr = (Math.random() - 0.5) * 0.3;
+    s.texto = o.texto || '1';
 }
 
 function limparParticulas() {
     for (const p of poolParticulas) p.ativa = false;
 }
 
-function atualizarParticulas() {
+// Anéis que expandem ao coletar estrela (curtos: 12 passos; no máximo 12 de uma vez)
+let aneis = [];
+function atualizarAneis() {
+    let j = 0;
+    for (const a of aneis) { a.t++; if (a.t <= 12) aneis[j++] = a; }
+    aneis.length = Math.min(j, 12);
+}
+function desenharAneis(ctx) {
+    ctx.save();
+    for (const a of aneis) {
+        const k = a.t / 12;
+        ctx.globalAlpha = 1 - k;
+        ctx.strokeStyle = a.cor; ctx.lineWidth = 3 * (1 - k) + 0.5;
+        ctx.beginPath(); ctx.arc(a.x, a.y, 6 + k * 22, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function atualizarParticulas(velMundo = 0) {
+    atualizarAneis();
     for (const pt of poolParticulas) {
         if (!pt.ativa) continue;
-        pt.x += pt.vx;
+        pt.xAnt = pt.x; pt.yAnt = pt.y;
+        pt.x += pt.vx - (pt.noMundo ? velMundo : 0);
         pt.y += pt.vy;
         pt.vy += pt.gravidade;
         if (pt.forma === 'poeira') { pt.vx *= 0.92; pt.vy *= 0.92; }
@@ -3309,42 +3574,55 @@ function atualizarParticulas() {
     }
 }
 
-function spritePoeira() {
-    return spriteCache('poeira', 64, (g, t) => {
+function spritePoeira(cor = '#FFFFFF') {   // "puf" de nuvem tingido
+    return spriteCache('poeira|' + cor, 64, (g, t) => {
+        const c = paraRGBA(cor);
         const m = t / 2;
         const grad = g.createRadialGradient(m, m, 0, m, m, m);
-        grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-        grad.addColorStop(0.6, 'rgba(255,255,255,0.5)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.9)`);
+        grad.addColorStop(0.6, `rgba(${c.r},${c.g},${c.b},0.5)`);
+        grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
         g.fillStyle = grad; g.fillRect(0, 0, t, t);
     });
 }
 
+// posição da partícula entre o passo anterior e o atual (lisa em 120/144 Hz)
+const px = (p) => p.xAnt + (p.x - p.xAnt) * alfaRender;
+const py = (p) => p.yAnt + (p.y - p.yAnt) * alfaRender;
+
 function desenharParticulas(ctx) {
     ctx.save();
-    // 1) círculos e poeira (normal)
+    // 1) círculos, poeira e as formas das auras (normal)
     for (const pt of poolParticulas) {
-        if (!pt.ativa || pt.forma === 'brilho') continue;
+        if (!pt.ativa || pt.forma === 'brilho' || pt.forma === 'faisca') continue;
         const k = Math.max(0, pt.life / pt.vida0);
-        if (pt.forma === 'poeira') {
+        if (pt.forma === 'poeira' || pt.forma === 'fumaca') {
             const t = pt.size * (1 + (1 - k) * 1.6);
             ctx.globalAlpha = k * 0.7;
-            ctx.drawImage(spritePoeira(), pt.x - t, pt.y - t, t * 2, t * 2);
+            ctx.drawImage(spritePoeira(pt.color), px(pt) - t, py(pt) - t, t * 2, t * 2);
+        } else if (pt.forma !== 'circulo') {
+            ctx.globalAlpha = Math.min(1, k * 1.5);
+            desenharFormaParticula(ctx, pt.forma, pt.color, px(pt), py(pt), pt.size * 2.4, pt.rot, pt.texto);
         } else {
             ctx.globalAlpha = Math.min(1, pt.life);
             ctx.fillStyle = pt.color;
-            ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(px(pt), py(pt), pt.size, 0, Math.PI * 2); ctx.fill();
         }
     }
     // 2) brilhos (modo lighter)
     ctx.globalCompositeOperation = 'lighter';
     for (const pt of poolParticulas) {
-        if (!pt.ativa || pt.forma !== 'brilho') continue;
+        if (!pt.ativa || (pt.forma !== 'brilho' && pt.forma !== 'faisca')) continue;
         const k = Math.max(0, pt.life / pt.vida0);
+        if (pt.forma === 'faisca') {
+            ctx.globalAlpha = Math.min(1, k * 1.6);
+            desenharFormaParticula(ctx, 'faisca', pt.color, px(pt), py(pt), pt.size * 2.4, pt.rot);
+            continue;
+        }
         const t = pt.size * 2.4 * (0.4 + 0.6 * k);
         ctx.globalAlpha = Math.min(1, k * 1.4);
         ctx.save();
-        ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
+        ctx.translate(px(pt), py(pt)); ctx.rotate(pt.rot);
         ctx.drawImage(spriteEstrelinha(pt.color), -t / 2, -t / 2, t, t);
         ctx.restore();
     }
@@ -3359,16 +3637,18 @@ function aoPousar(topoY, estavaNoChao) {
         // Pose de recuperação do pouso + passada recomeça com os cascos da frente tocando o chão
         player.pouso = { t: 0, forca: vyImpacto };
         player.runPhase = (Math.floor(player.runPhase * FATOR_FASE_GALOPE) + 1 + 0.3) / FATOR_FASE_GALOPE;
+        semInterpolar('runPhase'); // a passada recomeça sem "varrer" um ciclo inteiro num quadro
+        player.mistura = Math.min(player.mistura, 0.3);   // a pose de pouso aparece já no impacto
         if (player.spin < 0) player.giroRapido = true;
         if (vyImpacto > 8 || slamValido) {
             player.scaleX = 1.6;
             player.scaleY = 0.4;
-            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira' });
+            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
         } else {
             // Pouso leve: squash suave + um pouco de poeira
             player.scaleX = 1.3;
             player.scaleY = 0.7;
-            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira' });
+            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
         }
         if (slamValido) {
             screenShake = 20; // impacto brutal
@@ -3586,12 +3866,14 @@ function morrer() {
 function passoMorte() {
     passosMorte--;
     frames++;
+    tempoAnim += PASSO_FISICA;
     sortearTremor();
     if (passosMorte < PASSOS_ANIM_MORTE - PASSOS_HITPAUSE_MORTE) {
         player.vy += player.gravity;
         player.y += player.vy;
         player.spin -= 0.25;
-        atualizarParticulas();
+        player.mistura += (1 - player.mistura) * 0.3;   // patas abrem (pose de susto)
+        atualizarParticulas(0);
     }
     if (passosMorte <= 0) mostrarGameOver();
 }
@@ -3633,6 +3915,28 @@ function mostrarGameOver() {
 const corMix = (a, b, t) => paraHex(misturar(paraRGBA(a), paraRGBA(b), t));
 const rgbaDe = (cor, a) => { const c = paraRGBA(cor); return `rgba(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)},${a})`; };
 
+// Cores "visuais" de cada fase, sem editar PHASES:
+// - céu sempre com a cor mais escura em cima (horizonte iluminado em todas as fases)
+// - céu puxado para a noite roxa (fases marrons, verde-ácido e cinza puro deixam de fugir do tema)
+// - brilhos e bordas neon suavizados (teto de saturação)
+const COR_NOITE = '#1B1340';
+const FASES_VISUAL = PHASES.map(ph => {
+    const ceu = [ph.sky[0], ph.sky[1]]
+        .sort((a, b) => luminancia(paraRGBA(a)) - luminancia(paraRGBA(b)))
+        .map(c => corMix(c, COR_NOITE, 0.45));
+    const suave = (c) => corMix(c, '#FFFFFF', 0.3);
+    return { ...ph, sky: ceu, platform: { top: ph.platform.top, glow: suave(ph.platform.glow), edge: suave(ph.platform.edge) } };
+});
+
+// Silhueta no topo das montanhas próximas, conforme o tema da fase
+function decorDaFase(id) {
+    if ([3, 16, 18].includes(id)) return 'estalagmite';
+    if ([7, 10].includes(id)) return 'cogumelo';
+    if ([4, 17, 22].includes(id)) return 'cristal';
+    if ([12, 14, 15, 20, 24].includes(id)) return 'torre';
+    return 'pinheiro';
+}
+
 // Aleatório com semente: o cenário de cada fase sai sempre igual
 function aleatorioSemente(semente) {
     let s = semente >>> 0;
@@ -3669,7 +3973,7 @@ function progressoNaFase() {
 }
 
 function desenharCeu(faseIdx, t) {
-    const ph = PHASES[faseIdx], prox = PHASES[Math.min(faseIdx + 1, PHASES.length - 1)];
+    const ph = FASES_VISUAL[faseIdx], prox = FASES_VISUAL[Math.min(faseIdx + 1, PHASES.length - 1)];
     const chave = faseIdx + '|' + Math.round(t * 50);
     if (chave !== ceuChave) {
         ceuChave = chave;
@@ -3694,7 +3998,7 @@ function desenharCeu(faseIdx, t) {
 function obterCenario(faseIdx) {
     const chave = faseIdx + '|' + cw + '|' + ch + '|' + bgCanvas.width;
     if (cacheCenario && cacheCenario.chave === chave) return cacheCenario;
-    const ph = PHASES[faseIdx];
+    const ph = FASES_VISUAL[faseIdx];
     const rnd = aleatorioSemente(1234 + faseIdx * 97);
     const TW = Math.max(cw, 900);           // largura do "azulejo" que se repete na horizontal
     const onda = (x, n, f) => Math.sin(2 * Math.PI * n * x / TW + f); // n inteiro = emenda perfeita
@@ -3720,24 +4024,33 @@ function obterCenario(faseIdx) {
         g.globalAlpha = 1;
     }
 
-    // 2) Aurora: 3 faixas onduladas com degradê vertical, tingidas pela cor da fase
-    const hA = ch * 0.6;
+    // 2) Aurora: 2 cortinas no alto do céu, feitas de raios verticais finos presos a uma curva ondulada
+    const hA = ch * 0.5;
     const aurora = novoCanvas(TW, hA);
     {
         const g = aurora.getContext('2d');
-        for (let k = 0; k < 3; k++) {
-            const cor = corMix(PALETA.aurora[k], ph.platform.glow, 0.35);
-            const base = hA * (0.18 + 0.12 * k), amp = 25 + 15 * k, alt = 70 + 25 * k, f = rnd() * 6;
-            const grad = g.createLinearGradient(0, base - amp, 0, base + amp + alt);
-            grad.addColorStop(0, rgbaDe(cor, 0));
-            grad.addColorStop(0.4, rgbaDe(cor, 0.22));
-            grad.addColorStop(1, rgbaDe(cor, 0));
+        for (let k = 0; k < 2; k++) {
+            const cor = corMix(PALETA.aurora[k], ph.platform.glow, 0.3);
+            const base = hA * (0.2 + 0.22 * k), amp = 22 + 12 * k, f = rnd() * 6;
+            const topoEm = (x) => base + amp * onda(x, k + 1, f) + 8 * onda(x, k + 3, f + 2);
+            // brilho difuso por trás dos raios
+            const grad = g.createLinearGradient(0, base - amp, 0, base + amp + 70);
+            grad.addColorStop(0, rgbaDe(cor, 0)); grad.addColorStop(0.35, rgbaDe(cor, 0.1)); grad.addColorStop(1, rgbaDe(cor, 0));
             g.fillStyle = grad;
-            // o caminho passa um pouco das bordas do azulejo: assim não aparece emenda vertical
             g.beginPath();
-            for (let x = -32; x <= TW + 32; x += 16) g.lineTo(x, base + amp * onda(x, k + 1, f));
-            for (let x = TW + 32; x >= -32; x -= 16) g.lineTo(x, base + amp * onda(x, k + 1, f) + alt + 20 * onda(x, k + 2, f + 1));
+            for (let x = -32; x <= TW + 32; x += 16) g.lineTo(x, topoEm(x));
+            for (let x = TW + 32; x >= -32; x -= 16) g.lineTo(x, topoEm(x) + 70);
             g.closePath(); g.fill();
+            // raios: retângulos finos com degradê (claro em cima, somem embaixo)
+            const nRaios = Math.round(TW / 22);
+            for (let i = 0; i < nRaios; i++) {
+                const x = (i / nRaios) * TW + rnd() * 10, y = topoEm(x), alt = 40 + rnd() * 55, larg = 2 + rnd() * 2.5;
+                const gr = g.createLinearGradient(0, y, 0, y + alt);
+                gr.addColorStop(0, rgbaDe(cor, 0.08 + rnd() * 0.12)); gr.addColorStop(1, rgbaDe(cor, 0));
+                g.fillStyle = gr;
+                g.fillRect(x, y, larg, alt);
+                if (x + larg > TW) g.fillRect(x - TW, y, larg, alt);   // emenda do azulejo
+            }
         }
     }
 
@@ -3752,9 +4065,25 @@ function obterCenario(faseIdx) {
         for (let x = -16; x <= TW + 16; x += 8) g.lineTo(x, h - alturaEm(x));
         g.lineTo(TW + 16, h + 2); g.closePath(); g.fill();
         if (pinheiros) {
+            // silhueta conforme o tema: pinheiros, cogumelos, cristais, torres ou estalagmites
+            const tipo = decorDaFase(ph.id);
             for (let i = 0; i < pinheiros; i++) {
                 const x = rnd() * TW, y = h - alturaEm(x) + 2, a = 12 + rnd() * 18;
-                g.beginPath(); g.moveTo(x - a * 0.32, y); g.lineTo(x, y - a); g.lineTo(x + a * 0.32, y); g.closePath(); g.fill();
+                g.beginPath();
+                if (tipo === 'cogumelo') {
+                    g.rect(x - a * 0.08, y - a * 0.55, a * 0.16, a * 0.55);
+                    g.moveTo(x + a * 0.36, y - a * 0.5); g.ellipse(x, y - a * 0.55, a * 0.36, a * 0.26, 0, Math.PI, 0);
+                } else if (tipo === 'cristal') {
+                    g.moveTo(x - a * 0.18, y); g.lineTo(x - a * 0.12, y - a * 0.7); g.lineTo(x, y - a); g.lineTo(x + a * 0.12, y - a * 0.7); g.lineTo(x + a * 0.18, y);
+                } else if (tipo === 'torre') {
+                    g.rect(x - a * 0.14, y - a, a * 0.28, a);
+                    g.moveTo(x - a * 0.2, y - a); g.lineTo(x, y - a * 1.3); g.lineTo(x + a * 0.2, y - a);
+                } else if (tipo === 'estalagmite') {
+                    g.moveTo(x - a * 0.25, y); g.quadraticCurveTo(x - a * 0.05, y - a * 0.5, x, y - a * 0.9); g.quadraticCurveTo(x + a * 0.05, y - a * 0.5, x + a * 0.25, y);
+                } else {
+                    g.moveTo(x - a * 0.32, y); g.lineTo(x, y - a); g.lineTo(x + a * 0.32, y);
+                }
+                g.closePath(); g.fill();
             }
         }
         // luz de borda no topo (cor da fase)
@@ -3784,8 +4113,16 @@ function obterCenario(faseIdx) {
             if (x - r < 0) bolha(x + TW, r);
             if (x + r > TW) bolha(x - TW, r);
         }
-        g.fillStyle = rgbaDe(corMix('#FFFFFF', ph.platform.edge, 0.3), 0.14);
+        // "mar de nuvens": degradê da cor da fase (topo) até o céu (base, opaco) + borda clara em cima
+        const gradMar = g.createLinearGradient(0, hN * 0.2, 0, hN);
+        gradMar.addColorStop(0, rgbaDe(corMix(ph.platform.edge, '#FFFFFF', 0.3), 0.3));
+        gradMar.addColorStop(1, ph.sky[0]);
+        g.fillStyle = 'rgba(255,255,255,0.32)';     // borda clara: a forma inteira clara...
         g.fill(banco, 'nonzero');
+        g.save(); g.translate(0, 2);                  // ...e por cima a mesma forma 2px abaixo (sobra só a borda do topo)
+        g.fillStyle = gradMar;
+        g.fill(banco, 'nonzero');
+        g.restore();
     }
 
     // vaga-lumes: posições-base fixas por fase
@@ -3804,19 +4141,27 @@ function desenharCamada(img, x0, y) {
     for (; x < cw; x += w) bgCtx.drawImage(img, x, y, w, h);
 }
 
-function spriteLua() {
-    return spriteCache('lua', 220, (g, t) => {
+// Lua: cheia (0), crescente (1) ou meia (2), conforme a fase
+function spriteLua(variante = 0) {
+    return spriteCache('lua|' + variante, 220, (g, t) => {
         const m = t / 2;
         const halo = g.createRadialGradient(m, m, 30, m, m, m);
-        halo.addColorStop(0, 'rgba(255,240,200,0.35)');
+        halo.addColorStop(0, `rgba(255,240,200,${variante === 1 ? 0.22 : 0.35})`);
         halo.addColorStop(1, 'rgba(255,240,200,0)');
         g.fillStyle = halo; g.fillRect(0, 0, t, t);
-        const disco = g.createRadialGradient(m - 12, m - 12, 4, m, m, 38);
+        // disco da lua num canvas próprio, para "recortar" a sombra sem apagar o halo
+        const d = document.createElement('canvas'); d.width = d.height = t;
+        const dg = d.getContext('2d');
+        const disco = dg.createRadialGradient(m - 12, m - 12, 4, m, m, 38);
         disco.addColorStop(0, '#FFFBEA'); disco.addColorStop(1, PALETA.lua);
-        g.fillStyle = disco;
-        g.beginPath(); g.arc(m, m, 36, 0, Math.PI * 2); g.fill();
-        g.fillStyle = 'rgba(190,160,110,0.22)';
-        [[-10, 8, 7], [12, -6, 5], [6, 16, 4], [-14, -12, 3]].forEach(([dx, dy, r]) => { g.beginPath(); g.arc(m + dx, m + dy, r, 0, Math.PI * 2); g.fill(); });
+        dg.fillStyle = disco;
+        dg.beginPath(); dg.arc(m, m, 36, 0, Math.PI * 2); dg.fill();
+        dg.fillStyle = 'rgba(190,160,110,0.22)';
+        [[-10, 8, 7], [12, -6, 5], [6, 16, 4], [-14, -12, 3]].forEach(([dx, dy, r]) => { dg.beginPath(); dg.arc(m + dx, m + dy, r, 0, Math.PI * 2); dg.fill(); });
+        dg.fillStyle = '#000';   // recorte opaco (senão a sombra quase não apaga)
+        if (variante === 1) { dg.globalCompositeOperation = 'destination-out'; dg.beginPath(); dg.arc(m + 18, m - 8, 34, 0, Math.PI * 2); dg.fill(); }
+        if (variante === 2) { dg.globalCompositeOperation = 'destination-out'; dg.fillRect(m + 4, 0, t, t); }
+        g.drawImage(d, 0, 0);
     });
 }
 
@@ -3840,14 +4185,15 @@ function desenharEstrelaCadente() {
 
 // Fundo completo: céu, estrelas, lua, aurora, montanhas, nuvens e efeitos de algumas fases
 function desenharFundo(faseIdx, dist, tx, ty) {
-    const ph = PHASES[faseIdx];
+    const ph = FASES_VISUAL[faseIdx];
     desenharCeu(faseIdx, state === 'menu' ? 0 : progressoNaFase());
     const cen = obterCenario(faseIdx);
     bgCtx.save();
     bgCtx.translate(tx * 0.5, ty * 0.5);
 
     desenharCamada(cen.estrelas, dist * 0.02, 0);
-    bgCtx.drawImage(spriteLua(), cw * 0.8 - 110, ch * 0.17 - 110, 220, 220);
+    const xLua = cw * (0.6 + (faseIdx % 4) * 0.09), yLua = ch * (0.13 + (faseIdx % 3) * 0.04);   // a lua muda de lugar e de fase
+    bgCtx.drawImage(spriteLua(faseIdx % 3), xLua - 110, yLua - 110, 220, 220);
     // estrelas que piscam (sprite de 4 pontas, modo "lighter")
     bgCtx.save();
     bgCtx.globalCompositeOperation = 'lighter';
@@ -3937,7 +4283,7 @@ function spriteNuvem(w, tipo, ph) {
     const g = c.getContext('2d');
     g.setTransform(s, 0, 0, s, M * s, M * s);
 
-    let base = corMix(PALETA.nuvem, ph.platform.edge, 0.12);
+    let base = corMix(PALETA.nuvem, ph.platform.edge, 0.06);
     let sombra = corMix(PALETA.nuvemSombra, ph.platform.glow, 0.25);
     const contorno = corMix(PALETA.nuvemContorno, ph.platform.glow, 0.15);
     if (tipo === 'movel') base = corMix(PALETA.nuvemMovel, ph.platform.edge, 0.1);
@@ -3966,10 +4312,10 @@ function spriteNuvem(w, tipo, ph) {
     g.save(); g.clip(forma); g.translate(-2, -6); g.fillStyle = base; g.fill(forma); g.restore();
     // brilho no topo + linha da cor da fase (identidade de cada fase)
     g.save(); g.clip(forma);
-    g.fillStyle = 'rgba(255,255,255,0.75)';
+    g.fillStyle = 'rgba(255,255,255,0.5)';
     g.beginPath(); g.roundRect(10, 2, W - 20, 4, 2); g.fill();
-    g.fillStyle = rgbaDe(ph.platform.edge, 0.35);
-    g.fillRect(0, T - 22, W, 3);
+    g.fillStyle = rgbaDe(ph.platform.edge, 0.5);
+    g.fillRect(0, T - 9, W, 3);   // faixa da cor da fase na borda de baixo
     g.restore();
 
     if (tipo === 'chuva') {
@@ -3981,7 +4327,7 @@ function spriteNuvem(w, tipo, ph) {
         g.stroke();
     } else if (tipo === 'movel') {
         // lacinho de fita na frente (plataforma móvel)
-        g.save(); g.translate(W * 0.18, 8);
+        g.save(); g.translate(W * 0.18, 8); g.scale(1.5, 1.5);   // lacinho maior
         g.fillStyle = PALETA.particulas[0]; g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 1.5; g.lineJoin = 'round';
         g.beginPath(); g.moveTo(0, 0); g.lineTo(-8, -5); g.lineTo(-8, 5); g.closePath(); g.fill(); g.stroke();
         g.beginPath(); g.moveTo(0, 0); g.lineTo(8, -5); g.lineTo(8, 5); g.closePath(); g.fill(); g.stroke();
@@ -4018,14 +4364,14 @@ function _spriteObstaculo(tipo, ph, s) {
     g.setTransform(s, 0, 0, s, M * s, M * s);
     g.lineJoin = 'round'; g.lineCap = 'round';
     if (tipo === 'espinho') {
-        const cor = corMix(PALETA.cristal, ph.platform.glow, 0.25), sombra = corMix(PALETA.cristalSombra, ph.platform.glow, 0.2);
+        const cor = corMix(PALETA.cristal, ph.platform.glow, 0.5), sombra = corMix(PALETA.cristalSombra, ph.platform.glow, 0.2);
         const picos = [[0, 13, 0.22, 0], [11, 25, 0.5, 0], [24, 36, 0.78, 0]];
         const alturas = [oh * 0.75, oh, oh * 0.8];
         picos.forEach(([x0, x1], i) => {
             const xm = (x0 + x1) / 2, topo = oh - alturas[i];
             const caminho = new Path2D();
             caminho.moveTo(x0, oh); caminho.lineTo(xm, topo); caminho.lineTo(x1, oh); caminho.closePath();
-            g.strokeStyle = PALETA.cristalContorno; g.lineWidth = 3; g.stroke(caminho);
+            g.strokeStyle = PALETA.cristalContorno; g.lineWidth = 4; g.stroke(caminho);
             g.fillStyle = sombra; g.fill(caminho);
             g.fillStyle = cor;
             g.beginPath(); g.moveTo(x0, oh); g.lineTo(xm, topo); g.lineTo(xm, oh); g.closePath(); g.fill();
@@ -4121,6 +4467,14 @@ function desenharSombraJogador() {
     ctx.restore();
 }
 
+// Escala da interface desenhada no canvas: no celular a resolução lógica (900) é maior que a tela,
+// então textos e pílulas precisam crescer para continuar legíveis
+function escalaUI() {
+    const larguraCss = gameContainer.clientWidth || cw;
+    return Math.max(1, cw / larguraCss);
+}
+const telaEstreita = () => (gameContainer.clientWidth || cw) < 600;
+
 // Texto com contorno (sem shadowBlur)
 function textoContornado(ctx, txt, x, y, cor, contorno, larguraContorno) {
     ctx.lineJoin = 'round';
@@ -4131,7 +4485,7 @@ function textoContornado(ctx, txt, x, y, cor, contorno, larguraContorno) {
 }
 
 function render() {
-    const ph = PHASES[currentPhase];
+    const ph = FASES_VISUAL[currentPhase];
     // Tremor de tela: sorteado no passo de física (não muda a cada quadro desenhado em 144 Hz)
     const tx = tremorX, ty = tremorY;
 
@@ -4163,6 +4517,7 @@ function render() {
     if (isMagnetActive) drawMagnetField(ctx, player);
 
     desenharParticulas(ctx);
+    desenharAneis(ctx);
     desenharSombraJogador();
 
     const cx = player.x + player.w / 2; // player.x já é coordenada de tela
@@ -4170,12 +4525,12 @@ function render() {
 
     // ── AURAS & SKINS ──
     if (selectedSkin !== 'default') {
-        const auraConfig = skins.find(s => s.id === selectedSkin);
-        if (auraConfig && auraConfig.colors) {
+        const efeito = AURA_EFEITO[selectedSkin];
+        if (efeito && efeito.brilho) {   // auras escuras (sombra, vazio, fumaça) não brilham
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             const aSize = Math.max(player.w, player.h) * 3;
-            ctx.drawImage(spriteLuz(auraConfig.colors[0]), cx - aSize / 2, cy - aSize / 2, aSize, aSize);
+            ctx.drawImage(spriteLuz(efeito.brilho), cx - aSize / 2, cy - aSize / 2, aSize, aSize);
             ctx.restore();
         }
     }
@@ -4190,11 +4545,11 @@ function render() {
     }
 
     // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
-    if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed);
-    if (player.char.id === 20) { drawDragon(ctx, player); }
+    if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed, tempoRender);
+    if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, tempoRender, 1.3); }
+    else if (player.char.id === 20) { drawDragon(ctx, player); }   // desenhos antigos (só para comparar)
     else if (player.char.id === 21) { drawCat(ctx, player); }
     else if (player.char.id === 22) { drawRabbit(ctx, player); }
-    else if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, frames * PASSO_FISICA, 1.3); }
     else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
 
@@ -4214,33 +4569,25 @@ function render() {
         ctx.fillStyle = bannerGrad;
         ctx.fillRect(0, ch / 2 - bh / 2, cw, bh);
         ctx.textAlign = 'center';
-        ctx.font = `600 15px ${FONTE_JOGO}`;
-        textoContornado(ctx, `FASE ${currentPhase + 1} DE ${PHASES.length}`, cw / 2, ch / 2 - 16, ph.platform.edge, PALETA.textoContorno, 4);
-        ctx.font = `700 34px ${FONTE_JOGO}`;
-        textoContornado(ctx, ph.name, cw / 2, ch / 2 + 20, PALETA.texto, PALETA.textoContorno, 6);
+        // a faixa cresce no celular para o texto continuar legível
+        const k = escalaUI();
+        ctx.font = `600 ${15 * k}px ${FONTE_JOGO}`;
+        textoContornado(ctx, `FASE ${currentPhase + 1} DE ${PHASES.length}`, cw / 2, ch / 2 - 16 * k, ph.platform.edge, PALETA.textoContorno, 4 * k);
+        ctx.font = `700 ${Math.min(34 * k, cw / (ph.name.length * 0.62))}px ${FONTE_JOGO}`;
+        textoContornado(ctx, ph.name, cw / 2, ch / 2 + 20 * k, PALETA.texto, PALETA.textoContorno, 6 * k);
         ctx.restore();
     }
 
-    // ── INDICADOR DE FASE (pílula no topo, centro) ──
-    ctx.save();
-    ctx.font = `600 15px ${FONTE_JOGO}`;
-    ctx.textAlign = 'center';
-    const rotulo = `✦ Fase ${currentPhase + 1}/${PHASES.length}: ${ph.name} ✦`;
-    const larg = ctx.measureText(rotulo).width + 28;
-    ctx.fillStyle = 'rgba(20,10,50,0.55)';
-    ctx.strokeStyle = rgbaDe(ph.platform.edge, 0.6); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(cw / 2 - larg / 2, 54, larg, 28, 14); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = PALETA.texto;
-    ctx.fillText(rotulo, cw / 2, 73);
-    ctx.restore();
+    // (o indicador de fase agora é uma pílula do HUD em HTML — ver updateHUD)
+    const kUI = escalaUI();
 
     // ── TEXTOS FLUTUANTES (com contorno, sem shadowBlur) ──
     ctx.save();
-    ctx.font = `700 24px ${FONTE_JOGO}`;
+    ctx.font = `700 ${24 * kUI}px ${FONTE_JOGO}`;
     ctx.textAlign = 'center';
     for (let ft of floatingTexts) {
         ctx.globalAlpha = Math.max(0, ft.life);
-        textoContornado(ctx, ft.text, ft.x, ft.y, PALETA.texto, ft.color, 5);
+        textoContornado(ctx, ft.text, ft.x, ft.y, PALETA.texto, ft.color, 5 * kUI);
     }
     ctx.restore();
 
@@ -4254,11 +4601,27 @@ btnStart.onclick = () => { startMusic(); initGame(); };
 btnChars.onclick = () => {
     mainMenu.classList.add('hidden');
     charMenu.classList.remove('hidden');
+    charMenu.scrollTop = 0;   // a loja sempre abre no começo
 };
-btnBack.onclick = () => {
+function voltarDaLoja() {
     charMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
-};
+}
+btnBack.onclick = voltarDaLoja;   // botão fixo no topo da loja
+document.getElementById('btn-back-fim').onclick = voltarDaLoja;   // e o do final, para quem rolou até lá
+// atalhos da barra fixa: rolam a loja até a seção (descontando a altura da barra)
+document.querySelectorAll('.loja-atalhos button').forEach(b => {
+    b.onclick = () => {
+        const alvo = document.getElementById(b.dataset.secao);
+        const barra = charMenu.querySelector('.loja-topo').offsetHeight;
+        const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        charMenu.scrollTo({ top: alvo.offsetTop - barra - 8, behavior: suave ? 'smooth' : 'auto' });
+    };
+});
+// Esc fecha a loja
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && !charMenu.classList.contains('hidden')) { voltarDaLoja(); e.preventDefault(); }
+});
 btnRestart.onclick = () => { startMusic(); initGame(); };
 btnMenuGo.onclick = () => {
     state = 'menu'; // sem isto o Enter no menu reiniciava a partida e o fundo ficava parado
@@ -4288,3 +4651,7 @@ function iniciarLoopMenu() {
     if (rafMenu === null) rafMenu = requestAnimationFrame(loopMenu);
 }
 iniciarLoopMenu();
+
+// Tudo carregado: agora os retratos da loja podem ser desenhados
+retratosLiberados = true;
+desenharRetratosPendentes();

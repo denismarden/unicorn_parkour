@@ -249,7 +249,7 @@ canvas {
 }
 
 /* HUD: pílulas de "vidro" com texto creme contornado (combina com a noite mágica) */
-.score-display, .stars-display, .speed-display {
+.score-display, .stars-display, .speed-display, .fase-display {
     background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
     padding: 10px 22px;
@@ -265,18 +265,18 @@ canvas {
 .stars-display span { color: #FFE08A; }
 .speed-display span { color: #FF9CCB; }
 
+/* Power-ups ativos: o mesmo vidro do placar (sem brilho branco nem pulsar constante) */
 .powerup-display {
-    background: rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(10px);
-    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    padding: 10px 20px;
     border-radius: 30px;
-    font-size: 1.5rem;
-    font-weight: 900;
-    border: 1px solid #ffffff;
-    box-shadow: 0 0 20px rgba(255,255,255,0.8);
-    color: #fff;
-    text-shadow: 0 0 10px #ffffff;
-    animation: pulse 1s infinite alternate;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #FFF6E8;
+    border: 1.5px solid rgba(185, 164, 255, 0.7);
+    box-shadow: 0 4px 0 rgba(42, 20, 80, 0.6), 0 6px 18px rgba(0, 0, 0, 0.35);
+    text-shadow: 0 2px 0 #2A1450, 2px 0 0 #2A1450, -2px 0 0 #2A1450, 0 -2px 0 #2A1450;
 }
 
 @keyframes pulse {
@@ -442,4 +442,175 @@ canvas {
 .lb-score {
     color: #ffdd00;
     font-weight: 700;
+}
+
+/* Celular em pé / telas estreitas: placar compacto numa linha; power-ups abaixo da pílula da fase
+   (fica no fim do arquivo para valer por cima das regras acima) */
+@media (max-width: 600px) {
+    #hud { top: 10px; left: 10px; right: 10px; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+    .hud-stats { gap: 6px; width: 100%; justify-content: center; }
+    .score-display, .stars-display, .speed-display { font-size: 1rem; padding: 6px 12px; }
+    .hud-powerups { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+    .powerup-display { font-size: 0.85rem; padding: 5px 10px; }
+    .ui-panel { padding: 24px 18px; }
+    .title { font-size: 2.4rem; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TEMA "NOITE MÁGICA" DOS MENUS (painéis, botões, loja, missão, placar)
+   ───────────────────────────────────────────────────────────── */
+.ui-panel {
+    background: linear-gradient(180deg, rgba(42, 28, 92, 0.86), rgba(27, 19, 64, 0.9));
+    border: 1.5px solid rgba(185, 164, 255, 0.45);
+    border-radius: 26px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 60px rgba(185, 164, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    color: #FFF6E8;
+}
+.ui-panel h2 { color: #FFF6E8; text-shadow: 0 2px 0 #2A1450; }
+.pausa { z-index: 10; background: rgba(20, 10, 50, 0.85); }
+
+/* Botões com relevo (afundam ao clicar) */
+.btn { font-weight: 700; letter-spacing: 1px; }
+.btn.primary {
+    background: linear-gradient(90deg, #FF7EB9, #A98BFF);
+    color: #FFFFFF;
+    text-shadow: 0 2px 0 rgba(42, 20, 80, 0.55);
+    box-shadow: 0 5px 0 #6B3FA0, 0 8px 20px rgba(255, 126, 185, 0.35);
+}
+.btn.primary:hover { box-shadow: 0 5px 0 #6B3FA0, 0 10px 28px rgba(255, 126, 185, 0.55); }
+.btn.secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: #FFF6E8;
+    border: 1.5px solid rgba(185, 164, 255, 0.55);
+    box-shadow: 0 4px 0 rgba(42, 20, 80, 0.7);
+}
+.btn.secondary:hover { background: rgba(185, 164, 255, 0.2); }
+.btn:active { transform: translateY(3px) scale(0.98); box-shadow: 0 1px 0 #6B3FA0; }
+
+/* Carteira de estrelas */
+.carteira {
+    font-size: 1.2rem; font-weight: 700; color: #FFE08A;
+    text-shadow: 0 2px 0 #2A1450; margin-bottom: 10px;
+}
+
+/* Missão diária */
+.painel-missao {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(185, 164, 255, 0.45);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-top: 16px;
+    text-align: left;
+}
+.missao-titulo { margin: 0 0 4px; color: #9BE7FF; font-size: 1.1rem; text-align: center; text-shadow: 0 2px 0 #2A1450; }
+.missao-desc { font-size: 0.95rem; text-align: center; color: #FFF6E8; }
+.missao-trilho { background: rgba(255, 255, 255, 0.1); border-radius: 999px; height: 12px; margin-top: 8px; overflow: hidden; border: 1px solid rgba(185, 164, 255, 0.35); }
+.missao-barra { background: linear-gradient(90deg, #FF9CCB, #B9A4FF, #9BE7FF); height: 100%; width: 0%; transition: width 0.3s; border-radius: 999px; }
+.missao-rodape { display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.85rem; color: #D9CCF2; }
+.missao-premio { color: #FFE08A; font-weight: 700; }
+
+/* Loja */
+.titulo-secao {
+    text-align: left; color: #FFE08A; text-shadow: 0 2px 0 #2A1450;
+    border-bottom: 1px solid rgba(185, 164, 255, 0.35); padding-bottom: 6px; margin-top: 16px;
+}
+.char-card {
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(185, 164, 255, 0.25);
+    border-radius: 18px;
+    gap: 8px;
+    padding: 12px 8px;
+}
+.char-card:hover { background: rgba(185, 164, 255, 0.16); border-color: rgba(185, 164, 255, 0.6); }
+.char-card.selected {
+    border-color: #FFE08A;
+    background: rgba(255, 224, 138, 0.12);
+    box-shadow: 0 0 18px rgba(255, 224, 138, 0.4), inset 0 0 10px rgba(255, 224, 138, 0.15);
+}
+.char-card.bloqueado .retrato { filter: grayscale(0.7) brightness(0.75); }
+.char-name { color: #FFF6E8; text-shadow: 0 2px 0 #2A1450; }
+.char-desc { color: #D9CCF2; }
+/* a regra geral "canvas { position:absolute; 100% }" é dos canvas do jogo — o retrato fica no fluxo do card */
+canvas.retrato { position: static; width: 140px; height: 104px; display: block; margin: 0 auto; }
+.character-grid { padding-bottom: 10px; }   /* o preço do último card não fica cortado */
+
+/* Barra fixa da loja: voltar + estrelas + atalhos, sempre visível ao rolar.
+   Encosta nas bordas do painel compensando o padding dele (--pad-y / --pad-x). */
+#character-menu { --pad-y: 40px; --pad-x: 40px; }
+.loja-topo {
+    position: sticky; top: calc(-1 * var(--pad-y)); z-index: 5;
+    margin: calc(-1 * var(--pad-y)) calc(-1 * var(--pad-x)) 6px;
+    padding: 14px var(--pad-x) 10px;
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 12px;
+    background: rgba(36, 22, 66, 0.94);
+    border-bottom: 1px solid rgba(185, 164, 255, 0.35);
+    border-radius: 24px 24px 0 0;
+    box-shadow: 0 8px 18px rgba(20, 8, 40, 0.45);
+}
+.loja-topo h2 { margin: 0; font-size: 1.6rem; }
+.loja-topo .carteira { margin: 0; white-space: nowrap; }
+.btn-voltar { margin: 0; padding: 8px 14px; font-size: 1rem; white-space: nowrap; }
+.loja-atalhos { grid-column: 1 / -1; display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; }
+.loja-atalhos button {
+    font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    color: #D9CCF2; background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(185, 164, 255, 0.3); border-radius: 999px; padding: 4px 12px;
+}
+.loja-atalhos button:hover { background: rgba(185, 164, 255, 0.18); color: #FFF6E8; }
+.loja-atalhos button:focus-visible, .btn-voltar:focus-visible { outline: 2px solid #9BE7FF; outline-offset: 2px; }
+#character-menu .titulo-secao { scroll-margin-top: 110px; }
+@media (max-width: 600px) {
+    #character-menu { --pad-y: 24px; --pad-x: 18px; }
+    .loja-topo { padding-top: 10px; }
+    .loja-topo h2 { font-size: 1.25rem; }
+    .btn-voltar { padding: 6px 10px; font-size: 0.9rem; }
+    .loja-atalhos button { font-size: 0.8rem; padding: 3px 9px; }
+}
+
+/* Abas do visual do personagem (auras, pelagens, rastros, chifres, chapéus) */
+.abas-visual { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+.aba-visual {
+    font: inherit; font-weight: 600; font-size: 0.95rem; cursor: pointer;
+    color: #D9CCF2; background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(185, 164, 255, 0.3); border-radius: 999px; padding: 6px 14px;
+}
+.aba-visual:hover { background: rgba(185, 164, 255, 0.18); color: #FFF6E8; }
+.aba-visual:focus-visible { outline: 2px solid #9BE7FF; outline-offset: 2px; }
+.aba-visual.ativa { color: #2A1450; background: #FFE08A; border-color: #FFE08A; }
+@media (max-width: 600px) { .aba-visual { font-size: 0.85rem; padding: 5px 10px; } }
+
+/* Placar */
+#leaderboard-list { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(185, 164, 255, 0.3); }
+.lb-row { border-bottom-color: rgba(185, 164, 255, 0.2); }
+.lb-rank { color: #FFE08A; }
+.lb-score { color: #9BE7FF; }
+.lb-char { color: #D9CCF2; }
+.aviso-top10 { color: #9BE7FF; margin-bottom: 10px; font-weight: 600; }
+#name-input-container { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(185, 164, 255, 0.35); }
+#player-name { border-color: rgba(185, 164, 255, 0.45); }
+#player-name:focus { border-color: #FFE08A; }
+
+/* Avisos (toasts) */
+.toast {
+    background: #FFE08A; color: #2A1450;
+    padding: 10px 20px; border-radius: 999px; font-weight: 700;
+    box-shadow: 0 4px 0 #6B3FA0, 0 8px 18px rgba(0, 0, 0, 0.35);
+    animation: slideDown 0.3s ease-out;
+    transition: opacity 0.5s;
+}
+
+/* Pílula da fase (HTML): mesmo vidro das outras; só a borda muda com a cor da fase atual */
+.fase-display {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.2rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    white-space: nowrap;
+    border-color: var(--cor-fase, rgba(185, 164, 255, 0.7));
+}
+@media (max-width: 600px) {
+    .fase-display { position: static; transform: none; font-size: 0.95rem; padding: 6px 12px; }
 }
