@@ -21,10 +21,12 @@ B="file:///$(cygpath -m "$RAIZ")"
 
 # Página de teste = index.html ATUAL + coletor de erros + rAF trocado por setTimeout (no headless o rAF não dispara)
 POLY="<script>window.__erros=[];window.onerror=function(m,s,l,c){window.__erros.push(m+' @'+l+':'+c);};window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now());},16);};window.cancelAnimationFrame=clearTimeout;</script>"
-sed -e "s|href=\"style.css\"|href=\"$B/style.css\"|" \
-    -e "s|<script src=\"personagem.js\"></script>|$POLY<script src=\"$B/personagem.js\"></script>|" \
-    -e "s|<script src=\"game.js\"></script>|<script src=\"$B/game.js\"></script><script src=\"teste_atual.js\"></script>|" \
+# (aceita o carimbo de versão "?v=..." que o publicar-jogo põe no index.html)
+sed -E -e "s|href=\"style\.css(\?v=[^\"]*)?\"|href=\"$B/style.css\"|" \
+    -e "s|<script src=\"personagem\.js(\?v=[^\"]*)?\"></script>|$POLY<script src=\"$B/personagem.js\"></script>|" \
+    -e "s|<script src=\"game\.js(\?v=[^\"]*)?\"></script>|<script src=\"$B/game.js\"></script><script src=\"teste_atual.js\"></script>|" \
     "$RAIZ/index.html" > "$TMP/pagina.html"
+grep -q "teste_atual.js" "$TMP/pagina.html" || { echo "ERRO: não achei as tags de script no index.html"; exit 1; }
 
 ALVO="pagina.html"
 if [ -n "$LARGURA" ]; then   # moldura com largura fixa: --window-size não vale no --dump-dom

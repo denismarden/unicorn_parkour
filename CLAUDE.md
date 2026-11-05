@@ -39,6 +39,7 @@ Tema visual: "noite mágica" (céu roxo/azul escuro, aurora, estrelas) + platafo
 
 ## Como rodar e testar
 - Jogar: abrir `index.html` no navegador (ou Live Server do VS Code).
+- Publicar: skill `publicar-jogo` (testa, sincroniza, carimba versão contra cache, push e confere o site https://denismarden.github.io/unicorn_parkour/).
 - Testar: skill `testar-jogo` → `bash .claude/skills/testar-jogo/rodar.sh` (bateria de testes no Chrome headless)
   e `rodar.sh vitrine_loja.js` (imagem com todos os personagens e itens). Rodar depois de toda mudança.
 
