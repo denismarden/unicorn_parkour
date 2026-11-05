@@ -41,7 +41,7 @@ const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance re
 const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.035;         // por plataforma
 const CHANCE_OMNI = 0.02;             // por plataforma (no máximo 1 por fase)
-const CONVERSAO_ESTRELAS = 0.2;       // fração das estrelas da partida que vai para a carteira
+const CONVERSAO_ESTRELAS = 0.5;       // fração das estrelas da partida que vai para a carteira
 const MIN_LARGURA_PLATAFORMA = 80;    // evita janelas de pouso de 2-3 frames nas fases finais
 const CUSTO_POR_PERSONAGEM = 800;     // preço = id × este valor (os 3 primeiros são livres)
 
