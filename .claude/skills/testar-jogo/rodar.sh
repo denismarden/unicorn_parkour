@@ -3,6 +3,7 @@
 #   bash .claude/skills/testar-jogo/rodar.sh                 → teste.js (bateria completa)
 #   bash .claude/skills/testar-jogo/rodar.sh vitrine_loja.js → salva vitrine_loja.png
 #   bash .claude/skills/testar-jogo/rodar.sh meu.js 412      → mede o layout dentro de um iframe de 412 px (celular)
+#   ORCAMENTO=260000 bash .claude/skills/testar-jogo/rodar.sh meu.js → simulação mais longa (tempo virtual em ms; padrão 90000)
 # O script de teste escreve o resultado em <body data-res="..."> e, se quiser uma imagem, em <body data-img="data:image/png;base64,...">.
 # Saída: o texto de data-res; a imagem vai para a pasta temporária (o caminho é impresso).
 set -u
@@ -39,7 +40,7 @@ fi
 
 W="$(cygpath -w "$TMP")"
 "$CHROME" --headless=new --disable-gpu --allow-file-access-from-files --user-data-dir="$W\\perfil" \
-    --virtual-time-budget=90000 --dump-dom "file:///$W\\$ALVO" 2>/dev/null > "$TMP/saida.html"
+    --virtual-time-budget=${ORCAMENTO:-90000} --dump-dom "file:///$W\\$ALVO" 2>/dev/null > "$TMP/saida.html"
 
 # data-res (pode ter várias linhas)
 awk '/data-res="/{f=1} f{print} f&&/"( |>)/{exit}' "$TMP/saida.html" | sed 's/.*data-res="//; s/"[ >].*//; s/&quot;/"/g; s/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g'

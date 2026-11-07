@@ -127,7 +127,10 @@ async function rodar() {
         ok(gameOverMenu.classList.contains('hidden'), 'game over ainda escondido durante a animação');
         await espera(1500);
         ok(state === 'gameover', 'game over aparece depois');
-        ok(globalStars === estrelasAntes + 200, `carteira recebe 20%: +${globalStars - estrelasAntes}`);
+        const esperado = Math.floor(1000 * CONVERSAO_ESTRELAS);
+        ok(globalStars === estrelasAntes + esperado, `carteira recebe ${CONVERSAO_ESTRELAS * 100}%: +${globalStars - estrelasAntes}`);
+        ok(finalStars.textContent.indexOf(esperado.toLocaleString()) >= 0, `game over mostra o ganho da loja (${finalStars.textContent})`);
+        ok(starsDisplay.textContent === esperado.toLocaleString(), `HUD mostra estrelas para a loja (${starsDisplay.textContent})`);
 
         // #33 menu volta ao estado menu
         btnMenuGo.click();

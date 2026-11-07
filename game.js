@@ -41,7 +41,7 @@ const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance re
 const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.035;         // por plataforma
 const CHANCE_OMNI = 0.02;             // por plataforma (no máximo 1 por fase)
-const CONVERSAO_ESTRELAS = 0.2;       // fração das estrelas da partida que vai para a carteira
+const CONVERSAO_ESTRELAS = 0.5;       // fração das estrelas da partida que vai para a carteira
 const MIN_LARGURA_PLATAFORMA = 80;    // evita janelas de pouso de 2-3 frames nas fases finais
 const CUSTO_POR_PERSONAGEM = 800;     // preço = id × este valor (os 3 primeiros são livres)
 
@@ -1303,6 +1303,7 @@ function initGame() {
     pauseMenu.classList.add('hidden');
     score = 0;
     starsCollected = 0;
+    estrelasHudAntes = -1;
     distance = 0;
     currentPhase = 0;
     phaseAnnounceFrames = 0;
@@ -3075,6 +3076,9 @@ function drawFeather(ctx, x, y, size, collected, t) {
 }
 
 // Só escreve no DOM quando o texto muda (evita trabalho de layout a cada frame)
+const starsPill = starsDisplay.parentElement;
+let estrelasHudAntes = -1; // -1 = partida nova (não pula no primeiro quadro)
+
 function setTexto(el, txt) {
     if (el._txt !== txt) { el._txt = txt; el.textContent = txt; }
 }
@@ -3091,7 +3095,15 @@ function updateHUD() {
         faseDisplay.style.setProperty('--cor-fase', FASES_VISUAL[currentPhase].platform.edge);
     }
     setTexto(scoreDisplay, String(Math.floor(score)));
-    setTexto(starsDisplay, String(Math.round(starsCollected)));
+    // estrelas que vão para a loja (já com a conversão), com um pulinho a cada ganho
+    const paraLoja = Math.floor(starsCollected * CONVERSAO_ESTRELAS);
+    if (paraLoja > estrelasHudAntes && estrelasHudAntes >= 0) {
+        starsPill.classList.remove('ganhou');
+        void starsPill.offsetWidth; // reinicia a animação
+        starsPill.classList.add('ganhou');
+    }
+    estrelasHudAntes = paraLoja;
+    setTexto(starsDisplay, paraLoja.toLocaleString());
     setTexto(speedDisplay, (gameSpeed / (window.innerWidth > 800 ? 7 : 5)).toFixed(1));
 }
 
@@ -3885,7 +3897,7 @@ function mostrarGameOver() {
     mobileControls.style.display = 'none';
     finalScore.innerText = Math.floor(score);
     const ganho = Math.floor(starsCollected * CONVERSAO_ESTRELAS);
-    finalStars.innerText = `${Math.round(starsCollected).toLocaleString()} (+${ganho.toLocaleString()} para a loja)`;
+    finalStars.innerText = `+${ganho.toLocaleString()} 🌟`;
     document.getElementById('final-phase').innerText = currentPhase + 1;
     document.getElementById('final-char').innerText = player.char.name;
 

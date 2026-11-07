@@ -263,6 +263,14 @@ canvas {
 }
 .score-display span { color: #9BE7FF; }
 .stars-display span { color: #FFE08A; }
+/* pulinho dourado quando entram estrelas para a loja */
+.stars-display.ganhou { animation: estrela-ganhou 0.35s ease-out; }
+@keyframes estrela-ganhou {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.12); border-color: #FFE08A; }
+    100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .stars-display.ganhou { animation: none; } }
 .speed-display span { color: #FF9CCB; }
 
 /* Power-ups ativos: o mesmo vidro do placar (sem brilho branco nem pulsar constante) */
