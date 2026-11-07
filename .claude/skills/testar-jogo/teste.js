@@ -306,7 +306,25 @@ async function rodar() {
         ok(poderes.fantasma > tAntes + 5.9, 'Relógio soma 6 s nos poderes ativos');
         zerarPoderesNovos();
         ok(!PODERES_NOVOS.some(ativo), 'reiniciar zera os poderes novos');
-        ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01,`duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
+        // Fadinha em jogo rápido: continua pegando estrelas e não some da tela (bug: ficava para trás e saía pela esquerda)
+        obstaculos = []; stars = [];
+        platforms.push({ x: distance - 200, y: ch * 0.7, baseY: ch * 0.7, w: 40000, h: ch });
+        player.y = ch * 0.7 - player.h; player.vy = 0; player.onGround = true; player.ant = null;
+        gameSpeed = gameSpeedAlvo = 18; player.hurtFrames = 9999;
+        ativarPoder('fada', 30);
+        let pegas = 0; const coletarOrig = coletarEstrela;
+        coletarEstrela = (s) => { pegas++; coletarOrig(s); };
+        isPaused = false;
+        for (let k = 0; k < 300; k++) {
+            if (k % 20 === 0) stars.push({ x: distance + player.x + 260 + Math.random() * 150, y: player.y - 70 - Math.random() * 40, size: 10, starType: STAR_TYPES[0], collected: false, oscOffset: 0 });
+            step();
+        }
+        isPaused = true; coletarEstrela = coletarOrig; player.hurtFrames = 0;
+        ok(fada && fada.x >= 0 && fada.x <= cw, `Fadinha continua na tela em jogo rápido (x ${fada ? Math.round(fada.x) : 'sumiu'})`);
+        ok(pegas >= 10, `Fadinha + personagem pegam as estrelas em jogo rápido (${pegas} pegas)`);
+        zerarPoderesNovos();
+        magnetTimeLeft = 0; coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
+        ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01, `duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);

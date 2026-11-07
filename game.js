@@ -3444,7 +3444,7 @@ function pilulaPoder(id) {
 function ativarPoder(id, seg) {
     poderes[id] = Math.max(poderes[id] || 0, seg);
     pilulaPoder(id).classList.remove('hidden');
-    if (id === 'fada' && !fada) fada = { x: player.x - 30, y: player.y - 40, alvo: null, cd: 0 };
+    if (id === 'fada' && !fada) fada = { x: player.x - 30, y: player.y - 40, alvo: null, cd: 0, passosCaca: 0 };
 }
 function zerarPoderesNovos() {
     for (const id in poderes) poderes[id] = 0;
@@ -3530,21 +3530,36 @@ function desenharRaios(ctx) {
 // ── Fadinha: segue o personagem e busca estrelas por perto ──
 let fada = null;                      // {x, y, alvo, cd} em coordenadas de tela
 function passoFada() {
-    let tx, ty;
-    if (fada.alvo && !fada.alvo.collected) { tx = fada.alvo.x - distance; ty = fada.alvo.y; }
-    else { fada.alvo = null; tx = player.x - 26 + Math.sin(frames * 0.05) * 8; ty = player.y - 36 + Math.sin(frames * 0.09) * 6; }
-    const k = fada.alvo ? 0.25 : 0.12;
-    fada.x += (tx - fada.x) * k; fada.y += (ty - fada.y) * k;
-    if (fada.alvo && Math.hypot(tx - fada.x, ty - fada.y) < 16) { coletarEstrela(fada.alvo); fada.alvo = null; fada.cd = 8; }
-    if (!fada.alvo && --fada.cd <= 0) {
-        let melhor = null, md = FADA_ALCANCE;
-        for (const s of stars) {
-            if (s.collected || s.cai > 0) continue;
-            const d = Math.hypot(s.x - distance - player.x, s.y - player.y);
-            if (d < md) { md = d; melhor = s; }
+    const alvo = fada.alvo;
+    // desiste da estrela se ela já foi pega, ficou para trás (saiu da tela) ou se a perseguição demorou demais
+    if (alvo && (alvo.collected || alvo.x - distance < -10 || ++fada.passosCaca > 90)) fada.alvo = null;
+    if (fada.alvo) {
+        // voa até a estrela com velocidade própria, sempre mais rápida que o cenário (antes ficava para trás)
+        const tx = fada.alvo.x - distance, ty = fada.alvo.y;
+        const dx = tx - fada.x, dy = ty - fada.y, d = Math.hypot(dx, dy);
+        const vmax = 12 + gameSpeed * 1.6;
+        if (d <= vmax + 10) { fada.x = tx; fada.y = ty; coletarEstrela(fada.alvo); fada.alvo = null; fada.cd = 6; }
+        else { fada.x += dx / d * vmax; fada.y += dy / d * vmax; }
+    } else {
+        // sem alvo: volta para perto do personagem (acima e atrás), flutuando
+        const tx = player.x - 26 + Math.sin(frames * 0.05) * 8, ty = player.y - 36 + Math.sin(frames * 0.09) * 6;
+        fada.x += (tx - fada.x) * 0.15; fada.y += (ty - fada.y) * 0.15;
+        if (--fada.cd <= 0) {
+            // procura a estrela mais perto, só à frente (ou quase em cima) do personagem
+            let melhor = null, md = FADA_ALCANCE;
+            for (const s of stars) {
+                if (s.collected || s.cai > 0) continue;
+                const sx = s.x - distance;
+                if (sx < player.x - 20 || sx > cw - 10) continue;
+                const d = Math.hypot(sx - player.x, s.y - player.y);
+                if (d < md) { md = d; melhor = s; }
+            }
+            fada.alvo = melhor; fada.passosCaca = 0; fada.cd = 5;
         }
-        fada.alvo = melhor; fada.cd = 6;
     }
+    // nunca sai da tela
+    fada.x = Math.max(12, Math.min(cw - 12, fada.x));
+    fada.y = Math.max(12, Math.min(ch - 12, fada.y));
     if (frames % 3 === 0) emitirParticula({ x: fada.x, y: fada.y + 4, vx: -1.2, vy: 0.5, life: 0.6, size: 7, forma: 'brilho', color: frames % 2 ? '#FFB3E6' : '#FFFFFF' });
 }
 function desenharFada(ctx) {
