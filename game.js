@@ -3453,43 +3453,41 @@ function drawMagnetField(ctx, p) {
     ctx.restore();
 }
 
-// Pena do power-up de voo: pré-desenhada uma vez (cabo curvo, duas metades desiguais com fendas e fiozinhos)
+// Pena do power-up de voo (estilo jogo mobile fofo): folha larga e curva, contorno grosso,
+// metade clara + metade sombreada, 2 fendas, cabo curto e brilho. Pré-desenhada uma vez.
 function spritePena() {
-    return spriteCache('penaVoo', 160, (g, T) => {
-        const k = T / 64;          // desenha num espaço 64×64
+    return spriteCache('penaVoo2', 160, (g, T) => {
+        const k = T / 64;
         g.scale(k, k);
-        g.translate(32, 34); g.rotate(-0.55);   // pena inclinada, cabo embaixo à esquerda
-        // contorno da pena (metade de cima mais estreita, de baixo mais larga), com 2 fendas
-        const vane = new Path2D();
-        vane.moveTo(0, 26);                                     // começo da parte com fios (perto do cabo)
-        vane.bezierCurveTo(-9, 18, -10, 4, -7, -8);             // borda esquerda
-        vane.lineTo(-4.5, -9);                                  // fenda 1
-        vane.bezierCurveTo(-6, -18, -3, -26, 1, -29);           // até a ponta
-        vane.bezierCurveTo(6, -24, 8, -14, 7, -3);              // borda direita
-        vane.lineTo(4.5, -1.5);                                 // fenda 2
-        vane.bezierCurveTo(8, 6, 6, 18, 0, 26);
-        vane.closePath();
-        g.lineJoin = 'round';
-        g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 3.2; g.stroke(vane);
-        const grad = g.createLinearGradient(0, -29, 0, 26);
-        grad.addColorStop(0, '#FFFFFF'); grad.addColorStop(0.55, '#F2ECFF'); grad.addColorStop(1, '#C9B8FF');
-        g.fillStyle = grad; g.fill(vane);
-        // fiozinhos (barbas) diagonais saindo do cabo
-        g.save(); g.clip(vane);
-        g.strokeStyle = 'rgba(140,110,200,0.45)'; g.lineWidth = 0.8;
-        for (let y = -24; y < 24; y += 3.2) {
-            g.beginPath(); g.moveTo(0.3, y); g.lineTo(-10, y - 6); g.stroke();
-            g.beginPath(); g.moveTo(0.3, y); g.lineTo(10, y - 5); g.stroke();
-        }
-        g.fillStyle = 'rgba(255,255,255,0.6)';   // brilho
-        g.beginPath(); g.ellipse(-3.5, -12, 1.6, 7, 0.15, 0, Math.PI * 2); g.fill();
+        g.translate(32, 32); g.rotate(0.38);       // inclinada: ponta em cima à direita, cabo embaixo à esquerda
+        // silhueta: larga, ponta arredondada, curvada para um lado (assimétrica)
+        const pena = new Path2D();
+        pena.moveTo(0, 17);
+        pena.bezierCurveTo(-11, 12, -13, -4, -8, -14);      // lado esquerdo (largo)
+        pena.lineTo(-5.5, -12.5);                            // fenda esquerda
+        pena.bezierCurveTo(-6, -20, -2, -26, 3, -27);        // até a ponta
+        pena.bezierCurveTo(8, -24, 10, -14, 8, -6);          // lado direito (mais estreito)
+        pena.lineTo(5.6, -5.5);                              // fenda direita
+        pena.bezierCurveTo(9, 3, 6, 12, 0, 17);
+        pena.closePath();
+        g.lineJoin = 'round'; g.lineCap = 'round';
+        g.strokeStyle = '#3A2363'; g.lineWidth = 3.6; g.stroke(pena);
+        g.fillStyle = '#FFFFFF'; g.fill(pena);
+        g.save(); g.clip(pena);
+        // metade direita sombreada (lilás) + ponta rosada: volume de "desenho animado"
+        g.fillStyle = '#D9CCFF';
+        g.beginPath(); g.moveTo(1.2, -30); g.quadraticCurveTo(1.6, 0, 0.4, 20); g.lineTo(14, 20); g.lineTo(14, -30); g.closePath(); g.fill();
+        g.fillStyle = 'rgba(255,156,203,0.55)';
+        g.beginPath(); g.ellipse(2, -24, 10, 7, 0, 0, Math.PI * 2); g.fill();
+        // brilho grande no lado claro
+        g.fillStyle = 'rgba(255,255,255,0.95)';
+        g.beginPath(); g.ellipse(-5, -5, 1.8, 7, 0.2, 0, Math.PI * 2); g.fill();
         g.restore();
-        // cabo (raque) levemente curvo, passando do fim da pena
-        g.lineCap = 'round';
-        g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 3.4;
-        g.beginPath(); g.moveTo(1, -27); g.quadraticCurveTo(0.6, 4, -1.5, 31); g.stroke();
-        g.strokeStyle = '#FFF6E8'; g.lineWidth = 1.4;
-        g.beginPath(); g.moveTo(1, -27); g.quadraticCurveTo(0.6, 4, -1.5, 31); g.stroke();
+        // cabo: curvo, sai pela base
+        g.strokeStyle = '#3A2363'; g.lineWidth = 3.4;
+        g.beginPath(); g.moveTo(1.5, -22); g.quadraticCurveTo(1.8, 2, -1, 26); g.stroke();
+        g.strokeStyle = '#FFF1F8'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(1.5, -22); g.quadraticCurveTo(1.8, 2, -1, 26); g.stroke();
     });
 }
 

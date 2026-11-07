@@ -1507,76 +1507,72 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
 }
 
 // Asa de penas (coordenadas da asa; pivô na cernelha). fundo = asa de trás, mais escura
-// Pena comprida com ponta arredondada, apontando para +x (usada nas asas)
-function caminhoPenaAsa(L, W) {
-    const p = new Path2D();
-    p.moveTo(0, -W * 0.35);
-    p.quadraticCurveTo(L * 0.5, -W * 0.62, L - W * 0.5, -W * 0.48);
-    p.arc(L - W * 0.5, 0, W * 0.5, -Math.PI / 2, Math.PI / 2);
-    p.quadraticCurveTo(L * 0.5, W * 0.6, 0, W * 0.35);
-    p.closePath();
-    return p;
-}
-// Penas da asa: [direção em graus (0 = direita, 270 = para cima), comprimento, largura]
-const PENAS_ASA = [[244, 23, 9], [228, 28, 9.5], [212, 31, 9.5], [196, 29, 9]];   // varridas para trás, sobrepostas
-const _PENAS_ASA_PATH = PENAS_ASA.map(([, L, W]) => caminhoPenaAsa(L, W));
-const COBERTURA_ASA = (() => {   // parte de cima da asa (o "braço"), cobre a raiz das penas
+// ── Asa fofinha (estilo jogo mobile kawaii): silhueta única e gordinha, borda de baixo em gomos redondos ──
+// Coordenadas: ombro em (0,0); a asa sobe e vai para trás (x e y negativos).
+const ASA_FOFA = (() => {
+    const a = new Path2D();
+    a.moveTo(3, 1);
+    a.bezierCurveTo(4, -10, -8, -20, -24, -22);      // borda da frente, subindo para trás
+    a.bezierCurveTo(-32, -23, -38, -19, -36, -14);   // ponta arredondada
+    // 4 gomos na borda de trás (de cima para baixo, voltando ao ombro); as junções fazem os "dentes"
+    a.quadraticCurveTo(-41, -7, -32, -7);
+    a.quadraticCurveTo(-34, 1, -24, -1);
+    a.quadraticCurveTo(-23, 6, -14, 2);
+    a.quadraticCurveTo(-8, 7, 3, 1);
+    a.closePath();
+    return a;
+})();
+// curvinhas que separam os gomos (saem da junção para dentro, curtas)
+const ASA_DIVISOES = [[-32, -7, -26, -11], [-24, -1, -19, -6], [-14, 2, -10, -3]];
+// fileira de peninhas pequenas no alto da asa (2ª camada)
+const ASA_COBERTURA = (() => {
     const c = new Path2D();
-    c.moveTo(3, 2);
-    c.bezierCurveTo(5, -10, -3, -21, -12, -20);
-    c.quadraticCurveTo(-15, -12, -11, -7);
-    c.quadraticCurveTo(-6, -2, 3, 2);
+    c.moveTo(3, 1);
+    c.bezierCurveTo(4, -10, -8, -20, -24, -22);
+    c.quadraticCurveTo(-28, -15, -21, -14);
+    c.quadraticCurveTo(-20, -8, -12, -9);
+    c.quadraticCurveTo(-7, -3, 0, -4);
+    c.quadraticCurveTo(3, -2, 3, 1);
     c.closePath();
     return c;
 })();
 
-// cor da crina clareada para as pontas das penas (em cache: não cria texto novo a cada quadro)
+// cor da crina clareada para os gomos (em cache: não cria texto novo a cada quadro)
 const _cacheClareada = new Map();
-function corMisturada(cor) {
-    let c = _cacheClareada.get(cor);
-    if (!c) { c = paraHex(misturar(paraRGBA(cor), _BRANCO, 0.4)); _cacheClareada.set(cor, c); }
+function corMisturada(cor, k = 0.45) {
+    const chave = cor + k;
+    let c = _cacheClareada.get(chave);
+    if (!c) { c = paraHex(misturar(paraRGBA(cor), _BRANCO, k)); _cacheClareada.set(chave, c); }
     return c;
 }
 
 function desenharAsa(ctx, pal, lw, angulo, fundo) {
     ctx.save();
     ctx.rotate(angulo);
-    ctx.scale(1.15, 1.15);
-    // as penas se abrem um pouco quando a asa sobe (leque)
-    const abre = 1 + Math.max(0, -angulo) * 0.35;
-    const raizX = -2, raizY = -6;
-    const cont = pal.contorno, base = fundo ? pal.fundo : '#FFFFFF';
-    // pontas com a cor da crina clareada (suave: a asa continua branca)
-    const ponta = corMisturada(fundo ? pal.crinaFundo[0] : pal.crina[0]), ponta2 = corMisturada(fundo ? pal.crinaFundo[1] : pal.crina[2]);
-    ctx.lineJoin = 'round';
-    // 1) contorno único por trás de tudo (penas + cobertura)
-    ctx.strokeStyle = cont; ctx.lineWidth = lw * 1.5 / 1.15;
-    PENAS_ASA.forEach(([ang], i) => {
-        ctx.save(); ctx.translate(raizX, raizY); ctx.rotate(((ang - 220) * abre + 220) * Math.PI / 180);
-        ctx.stroke(_PENAS_ASA_PATH[i]); ctx.restore();
-    });
-    ctx.stroke(COBERTURA_ASA);
-    // 2) penas, da de cima (atrás) para a de baixo (frente): branco + ponta colorida + sombra separando
-    PENAS_ASA.forEach(([ang, L], i) => {
-        ctx.save(); ctx.translate(raizX, raizY); ctx.rotate(((ang - 220) * abre + 220) * Math.PI / 180);
-        const pena = _PENAS_ASA_PATH[i];
-        ctx.fillStyle = base; ctx.fill(pena);
-        ctx.save(); ctx.clip(pena);
-        ctx.fillStyle = i % 2 ? ponta2 : ponta;
-        ctx.beginPath(); ctx.ellipse(L, 0, L * 0.3, 8, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(90,58,138,0.22)';   // sombra na borda de baixo: separa uma pena da outra
-        ctx.fillRect(0, 1.2, L, 6);
-        ctx.restore();
-        ctx.restore();
-    });
-    // 3) cobertura por cima, com sombra suave e "escamas" de penas pequenas
-    ctx.fillStyle = base; ctx.fill(COBERTURA_ASA);
-    ctx.save(); ctx.clip(COBERTURA_ASA);
-    ctx.fillStyle = 'rgba(90,58,138,0.18)';
-    for (const [x, y] of [[-8, -9], [-3, -6], [-10, -15]]) { ctx.beginPath(); ctx.arc(x, y + 3, 3.4, 0, Math.PI); ctx.fill(); }
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath(); ctx.ellipse(-3, -15, 3, 1.2, -0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.scale(1.05, 1.05);
+    const branco = fundo ? pal.fundo : '#FFFFFF';
+    const tom = corMisturada(fundo ? pal.crinaFundo[0] : pal.crina[0], fundo ? 0.2 : 0.5);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // contorno grosso (padrão do personagem) por trás
+    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 1.7; ctx.stroke(ASA_FOFA);
+    ctx.fillStyle = branco; ctx.fill(ASA_FOFA);
+    ctx.save(); ctx.clip(ASA_FOFA);
+    // gomos de baixo com a cor da crina bem clarinha (degradê suave da raiz para a ponta)
+    ctx.fillStyle = tom;
+    ctx.beginPath(); ctx.ellipse(-27, -4, 15, 8, -0.35, 0, Math.PI * 2); ctx.fill();
+    // fileira de cima, branca, com sombrinha embaixo (separa as camadas sem linha)
+    ctx.fillStyle = 'rgba(90,58,138,0.16)';
+    ctx.translate(0, 2.2); ctx.fill(ASA_COBERTURA); ctx.translate(0, -2.2);
+    ctx.fillStyle = branco; ctx.fill(ASA_COBERTURA);
+    // brilho na borda da frente
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(-13, -17, 6, 1.8, -0.45, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+    // curvinhas entre os gomos
+    ctx.strokeStyle = pal.contornoInterno || pal.contorno; ctx.lineWidth = lw * 0.6;
+    ctx.beginPath();
+    for (const [x0, y0, x1, y1] of ASA_DIVISOES) { ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 - 1, (y0 + y1) / 2 + 1, x1, y1); }
+    ctx.stroke();
     ctx.restore();
 }
 
