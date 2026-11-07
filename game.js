@@ -3167,24 +3167,24 @@ function drawPowerupItem(ctx, pu, t, offsetX) {
 
 // Cores pastel do tema "noite mágica"; cat: poder (anel lilás), tesouro (anel dourado), lendario (arco-íris)
 const ESTILOS_POWERUP = {
-    magnet: { cor: '#FF8CC6', label: '🧲', nome: 'Ímã!', cat: 'poder', r: 19 },
-    shield: { cor: '#8FE3FF', label: '🛡️', nome: 'Escudo!', cat: 'poder', r: 19 },
-    bonus: { cor: '#FFE08A', label: '✨', nome: 'Pontos x2!', cat: 'poder', r: 19 },
-    slowmo: { cor: '#8FF0D8', label: '🌀', nome: 'Câmera lenta!', cat: 'poder', r: 19 },
-    infjump: { cor: '#FFB27A', label: '🦘', nome: 'Pulo infinito!', cat: 'poder', r: 19 },
-    shrink: { cor: '#FF9CB0', label: '🍄', nome: 'Mini!', cat: 'poder', r: 19 },
-    giant: { cor: '#A8F07A', label: '🦖', nome: 'Gigante!', cat: 'poder', r: 19 },
-    meteor: { cor: '#FF8F6B', label: '☄️', nome: 'Meteoro!', cat: 'poder', r: 19 },
-    rocket: { cor: '#D9DEF0', label: '🚀', nome: 'Foguete!', cat: 'poder', r: 19 },
-    blackhole: { cor: '#B98CFF', label: '🌌', nome: 'Buraco negro!', cat: 'poder', r: 19 },
-    hover: { cor: '#8CC8FF', label: '🛸', nome: 'Flutuar!', cat: 'poder', r: 19 },
-    nogap: { cor: '#9BEF9B', label: '🌉', nome: 'Ponte!', cat: 'poder', r: 19 },
-    lucky: { cor: '#8FF0B8', label: '🍀', nome: 'Sorte!', cat: 'tesouro', r: 19 },
-    starchest: { cor: '#FFD27A', label: '📦', nome: 'Baú de estrelas!', cat: 'tesouro', r: 22 },
-    coinshower: { cor: '#FFE98A', label: '🌧️', nome: 'Chuva de estrelas!', cat: 'tesouro', r: 22 },
-    rainbow: { cor: '#FFB3E6', label: '🌈', nome: 'Arco-íris!', cat: 'tesouro', r: 22 },
-    jackpot: { cor: '#FFC56B', label: '🎰', nome: 'Jackpot!', cat: 'tesouro', r: 22 },
-    omni: { cor: '#FFFFFF', label: '🌟', nome: 'OMNI!', cat: 'lendario', r: 24 }
+    magnet: { cor: '#FF8CC6', label: '🧲', nome: 'Ímã!', cat: 'poder', r: 24 },
+    shield: { cor: '#8FE3FF', label: '🛡️', nome: 'Escudo!', cat: 'poder', r: 24 },
+    bonus: { cor: '#FFE08A', label: '✨', nome: 'Pontos x2!', cat: 'poder', r: 24 },
+    slowmo: { cor: '#8FF0D8', label: '🌀', nome: 'Câmera lenta!', cat: 'poder', r: 24 },
+    infjump: { cor: '#FFB27A', label: '🦘', nome: 'Pulo infinito!', cat: 'poder', r: 24 },
+    shrink: { cor: '#FF9CB0', label: '🍄', nome: 'Mini!', cat: 'poder', r: 24 },
+    giant: { cor: '#A8F07A', label: '🦖', nome: 'Gigante!', cat: 'poder', r: 24 },
+    meteor: { cor: '#FF8F6B', label: '☄️', nome: 'Meteoro!', cat: 'poder', r: 24 },
+    rocket: { cor: '#D9DEF0', label: '🚀', nome: 'Foguete!', cat: 'poder', r: 24 },
+    blackhole: { cor: '#B98CFF', label: '🌌', nome: 'Buraco negro!', cat: 'poder', r: 24 },
+    hover: { cor: '#8CC8FF', label: '🛸', nome: 'Flutuar!', cat: 'poder', r: 24 },
+    nogap: { cor: '#9BEF9B', label: '🌉', nome: 'Ponte!', cat: 'poder', r: 24 },
+    lucky: { cor: '#8FF0B8', label: '🍀', nome: 'Sorte!', cat: 'tesouro', r: 24 },
+    starchest: { cor: '#FFD27A', label: '📦', nome: 'Baú de estrelas!', cat: 'tesouro', r: 27 },
+    coinshower: { cor: '#FFE98A', label: '🌧️', nome: 'Chuva de estrelas!', cat: 'tesouro', r: 27 },
+    rainbow: { cor: '#FFB3E6', label: '🌈', nome: 'Arco-íris!', cat: 'tesouro', r: 27 },
+    jackpot: { cor: '#FFC56B', label: '🎰', nome: 'Jackpot!', cat: 'tesouro', r: 27 },
+    omni: { cor: '#FFFFFF', label: '🌟', nome: 'OMNI!', cat: 'lendario', r: 30 }
 };
 const COR_ANEL_PU = { poder: '#B9A4FF', tesouro: '#FFD54A', lendario: '#FFFFFF' };
 
@@ -3251,6 +3251,146 @@ function desenharPowerupInterno(ctx, s, r, t) {
         const tb = 7 + 3 * Math.sin(t * 4 + i);
         ctx.drawImage(img, Math.cos(a) * rr - tb / 2, Math.sin(a) * rr * 0.6 - tb / 2, tb, tb);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EFEITOS DOS PODERES ATIVOS — cada poder mostra no personagem (e na tela) que está valendo
+// ─────────────────────────────────────────────────────────────────────────
+const CORES_PODER = {
+    rocket: ['#FFE08A', '#FFB347', '#FF7A1A'], meteor: ['#FFB347', '#FF7A1A', '#FF4500'],
+    bonus: '#FFE08A', lucky: '#8FF0B8', infjump: '#FFB27A', shrink: '#FF9CB0', giant: '#A8F07A',
+    hover: '#8CC8FF', blackhole: '#B98CFF', slowmo: '#8FF0D8', voo: '#FFFFFF'
+};
+
+// Partículas dos poderes (1 vez por passo de física, pelo pool — sem arrays novos)
+function emitirEfeitosPoderes() {
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2, f = frames;
+    const ale = (a) => (Math.random() - 0.5) * a;
+    if (isRocketActive) {
+        // jato de fogo saindo de trás + fumaça lilás
+        for (let i = 0; i < 2; i++) emitirParticula({ x: player.x - 2, y: cy + 4 + ale(10), vx: -7 - Math.random() * 5, vy: ale(1.5), life: 0.55, size: 12 + Math.random() * 8, forma: 'chama', color: CORES_PODER.rocket[(f + i) % 3] });
+        if (f % 3 === 0) emitirParticula({ x: player.x - 18, y: cy + 4, vx: -4, vy: ale(1), life: 0.9, size: 20, forma: 'fumaca', color: '#B9A4FF' });
+    }
+    if (isMeteorActive && f % 2 === 0) {
+        emitirParticula({ x: cx + ale(player.w), y: cy + ale(player.h), vx: -2 - Math.random() * 2, vy: -1.5 - Math.random(), life: 0.6, size: 10 + Math.random() * 6, forma: 'chama', color: CORES_PODER.meteor[f % 3] });
+    }
+    if (isBonusActive && f % 6 === 0) emitirParticula({ x: cx + ale(player.w * 1.2), y: cy + ale(player.h), vx: ale(0.6), vy: -1.6, life: 0.9, size: 11, forma: 'estrela', color: CORES_PODER.bonus });
+    if (isLuckyActive && f % 7 === 0) emitirParticula({ x: cx + ale(player.w * 1.3), y: cy + ale(player.h), vx: ale(0.5), vy: -1.2, life: 1, size: 12, forma: 'brilho', color: CORES_PODER.lucky });
+    if (isInfJumpActive && f % 8 === 0) emitirParticula({ x: cx + ale(player.w), y: player.y + player.h, vx: -1.5, vy: 0.8, life: 0.6, size: 12, forma: 'faisca', color: CORES_PODER.infjump });
+    if (isShrinkActive && f % 4 === 0) emitirParticula({ x: player.x, y: cy, vx: -2, vy: ale(0.6), life: 0.6, size: 9, forma: 'brilho', color: CORES_PODER.shrink });
+    if (isHoverActive && f % 3 === 0) emitirParticula({ x: cx + ale(30), y: player.y + player.h + 6, vx: -1, vy: 2.2, life: 0.6, size: 9, forma: 'brilho', color: CORES_PODER.hover });
+    if (isBlackHoleActive && f % 2 === 0) {
+        // poeira de estrelas sendo sugada em espiral
+        const a = Math.random() * Math.PI * 2, r = 110 + Math.random() * 40;
+        emitirParticula({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, vx: -Math.cos(a) * r / 28 + Math.sin(a) * 2, vy: -Math.sin(a) * r / 28 - Math.cos(a) * 2, life: 0.55, size: 8, forma: 'brilho', color: f % 4 ? CORES_PODER.blackhole : '#FF9CCB' });
+    }
+    if (isSlowMoActive && f % 10 === 0) emitirParticula({ x: Math.random() * cw, y: Math.random() * ch, vx: -0.5, vy: -0.3, life: 1.4, size: 10, forma: 'bolha', color: CORES_PODER.slowmo });
+    if (isFlying && f % 5 === 0) emitirParticula({ x: player.x + 4, y: cy - 4 + ale(10), vx: -2.5, vy: 0.6, life: 0.9, size: 10, forma: 'petala', color: '#FFFFFF' });
+}
+
+// Selos sobre a cabeça (x2, canguru, trevo, ampulheta): mostram de longe quais poderes estão valendo
+function spriteSelo(txt, cor) {
+    return spriteCache('selo|' + txt + '|' + cor, 72, (g, T) => {
+        const m = T / 2, r = T * 0.36;
+        g.fillStyle = corMix(cor, COR_NOITE, 0.55); g.beginPath(); g.arc(m, m, r, 0, Math.PI * 2); g.fill();
+        g.lineWidth = 5; g.strokeStyle = cor; g.stroke();
+        g.font = `700 ${Math.round(r * 1.15)}px 'Fredoka', 'Segoe UI Emoji', 'Segoe UI', sans-serif`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.lineWidth = 5; g.strokeStyle = PALETA.textoContorno; g.strokeText(txt, m, m + 2);
+        g.fillStyle = PALETA.texto; g.fillText(txt, m, m + 2);
+    });
+}
+const SELOS_PODER = [
+    ['bonus', 'x2', '#FFE08A'], ['infjump', '🦘', '#FFB27A'], ['lucky', '🍀', '#8FF0B8'], ['slowmo', '⏳', '#8FF0D8']
+];
+const _selosAtivos = [];
+
+// Desenho por trás do personagem (auras grandes) — chamado antes de desenharUnicornio
+function desenharEfeitosPoderes(ctx) {
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2, t = frames;
+    ctx.save();
+    if (isBlackHoleActive) {
+        // vórtice girando atrás do personagem
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz(CORES_PODER.blackhole), cx - 90, cy - 90, 180, 180);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+            const a = -t * 0.08 + i * Math.PI * 2 / 3;
+            ctx.strokeStyle = i === 1 ? 'rgba(255,156,203,0.55)' : 'rgba(185,140,255,0.6)'; ctx.lineWidth = 4 - i;
+            ctx.beginPath(); ctx.arc(cx, cy, 48 + i * 12, a, a + 1.6); ctx.stroke();
+        }
+    }
+    if (isHoverActive) {
+        // raio de disco voador: cone de luz embaixo + disco brilhando
+        const pe = player.y + player.h;
+        ctx.fillStyle = gradCache('hoverCone', () => {
+            const gr = ctx.createLinearGradient(0, 0, 0, 120);
+            gr.addColorStop(0, 'rgba(140,200,255,0.35)'); gr.addColorStop(1, 'rgba(140,200,255,0)');
+            return gr;
+        });
+        ctx.save(); ctx.translate(0, pe);
+        ctx.beginPath(); ctx.moveTo(cx - 22, 0); ctx.lineTo(cx + 22, 0); ctx.lineTo(cx + 46, 120); ctx.lineTo(cx - 46, 120); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz(CORES_PODER.hover), cx - 40, pe - 18, 80, 36);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = 'rgba(200,235,255,0.9)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(cx, pe + 4, 30, 6 + Math.sin(t * 0.2), 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    // auras de fogo / gigante / mini / pontos
+    ctx.globalCompositeOperation = 'lighter';
+    if (isRocketActive || isMeteorActive) {
+        const tg = 150 + Math.sin(t * 0.5) * 12;
+        ctx.drawImage(spriteLuz('#FF8A3A'), cx - tg / 2, cy - tg / 2, tg, tg);
+    }
+    if (isGiantActive) ctx.drawImage(spriteLuz(CORES_PODER.giant), cx - 110, cy - 100, 220, 200);
+    if (isShrinkActive) ctx.drawImage(spriteLuz(CORES_PODER.shrink), cx - 40, cy - 40, 80, 80);
+    if (isBonusActive) ctx.drawImage(spriteLuz(CORES_PODER.bonus), cx - 70, cy - 70, 140, 140);
+    ctx.restore();
+}
+
+// Desenho por cima do personagem: selos dos poderes + labareda do foguete
+function desenharSelosPoderes(ctx) {
+    const cx = player.x + player.w / 2;
+    if (isRocketActive) {
+        const cy = player.y + player.h / 2 + 4, L = 34 + Math.sin(frames * 0.9) * 8;
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,122,26,0.85)';
+        ctx.beginPath(); ctx.moveTo(player.x + 6, cy - 9); ctx.quadraticCurveTo(player.x - L * 0.6, cy - 6, player.x - L, cy); ctx.quadraticCurveTo(player.x - L * 0.6, cy + 6, player.x + 6, cy + 9); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,240,150,0.95)';
+        ctx.beginPath(); ctx.moveTo(player.x + 4, cy - 4); ctx.quadraticCurveTo(player.x - L * 0.35, cy - 2, player.x - L * 0.55, cy); ctx.quadraticCurveTo(player.x - L * 0.35, cy + 2, player.x + 4, cy + 4); ctx.closePath(); ctx.fill();
+        ctx.restore();
+    }
+    _selosAtivos.length = 0;
+    for (const s of SELOS_PODER) {
+        const ativo = (s[0] === 'bonus' && isBonusActive) || (s[0] === 'infjump' && isInfJumpActive) || (s[0] === 'lucky' && isLuckyActive) || (s[0] === 'slowmo' && isSlowMoActive);
+        if (ativo) _selosAtivos.push(s);
+    }
+    if (!_selosAtivos.length) return;
+    const tam = 34, gap = 5, larg = _selosAtivos.length * (tam + gap) - gap;
+    const y = player.y - tam - 22 + Math.sin(frames * 0.1) * 3;
+    _selosAtivos.forEach((s, i) => {
+        const x = cx - larg / 2 + i * (tam + gap);
+        ctx.drawImage(spriteSelo(s[1], s[2]), x, y, tam, tam);
+    });
+}
+
+// Moldura colorida na tela enquanto um poder "grande" está ativo
+function desenharVinhetaPoder(ctx) {
+    const cor = isSlowMoActive ? CORES_PODER.slowmo : isBlackHoleActive ? CORES_PODER.blackhole
+        : isRocketActive ? '#FF8A3A' : isGiantActive ? CORES_PODER.giant : isBonusActive ? CORES_PODER.bonus : null;
+    if (!cor) return;
+    ctx.save();
+    ctx.globalAlpha = 0.75 + 0.25 * Math.sin(frames * 0.08);
+    ctx.fillStyle = gradCache(`vinheta|${cor}|${cw}|${ch}`, () => {
+        const gr = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.35, cw / 2, ch / 2, Math.hypot(cw, ch) * 0.55);
+        gr.addColorStop(0, rgbaDe(cor, 0)); gr.addColorStop(1, rgbaDe(cor, 0.6));
+        return gr;
+    });
+    ctx.fillRect(0, 0, cw, ch);
+    if (isSlowMoActive) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(120,220,255,0.07)'; ctx.fillRect(0, 0, cw, ch); }
+    ctx.restore();
 }
 
 // Draws the shield ring around the player when shield is active
@@ -3581,10 +3721,9 @@ function step() {
 
     // Foguete
     if (isRocketActive) {
-        player.y = -80;
+        player.y = ch * 0.1;   // no alto da tela (visível, com o jato de fogo), acima de tudo
         player.vy = 0;
         player.jumps = 0;
-        for (let i = 0; i < 3; i++) emitirParticula({ x: player.x, y: player.y + player.h / 2, vx: -Math.random() * 20, vy: (Math.random() - 0.5) * 10, life: 1, color: '#ff4400', size: 6 });
     }
 
     let effectiveSpeed = gameSpeed;
@@ -3807,6 +3946,7 @@ function step() {
     }
 
     atualizarPose(player, effectiveSpeed);
+    emitirEfeitosPoderes();   // fogo do foguete, estrelas do x2, vórtice do buraco negro...
     const personagemNovo = usaPersonagemNovo(player);
     if (personagemNovo) atualizarEfeitosPersonagem(player, effectiveSpeed, distance); // fita e estrelinhas
 
@@ -3981,6 +4121,11 @@ function aoPousar(topoY, estavaNoChao) {
         const nPoeira = slamValido ? 12 : Math.round(3 + 4 * kPouso);
         for (let i = 0; i < nPoeira; i++) emitirParticula({ x: player.x + player.w / 2 + (Math.random() - 0.5) * 20, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 4 + 6 * kPouso), vy: -Math.random() * (slamValido ? 4 : 0.6 + 1.4 * kPouso), life: 0.6 + 0.3 * kPouso, size: slamValido ? 10 : 5 + 2 * kPouso, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
         if (!slamValido) playSound('land', kPouso);
+        if (isGiantActive && vyImpacto > 6 && !slamValido) {
+            // gigante: cada pouso faz o chão tremer
+            screenShake = Math.max(screenShake, 9);
+            aneis.push({ x: player.x + player.w / 2, y: topoY, cor: CORES_PODER.giant, t: 0, raio: 60 });
+        }
         if (slamValido) {
             screenShake = 20; // impacto brutal
             aneis.push({ x: player.x + player.w / 2, y: topoY, cor: '#FFFFFF', t: 0, raio: 70 });   // onda de choque
@@ -3994,7 +4139,10 @@ function aoPousar(topoY, estavaNoChao) {
         }
         if (isMeteorActive && vyImpacto > 10) {
             score += 500 * (player.char.pointsMult || 1.0) * (1 + ((unlockedUpgrades.meteor_pts || 0) * 0.5));
-            for (let i = 0; i < 25; i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * 25, vy: -Math.random() * 15, life: 1.5, color: "#ff2200", size: Math.random() * 15 + 5 });
+            // meteoro: explosão de chamas e anel de fogo no pouso
+            for (let i = 0; i < 18; i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * 16, vy: -Math.random() * 9, life: 0.9, color: CORES_PODER.meteor[i % 3], size: 12 + Math.random() * 10, forma: 'chama' });
+            aneis.push({ x: player.x + player.w / 2, y: topoY, cor: '#FF8A3A', t: 0, raio: 80 });
+            screenShake = Math.max(screenShake, 12);
         }
     }
     isSlamming = false;
@@ -5044,6 +5192,8 @@ function render() {
         ctx.restore();
     }
 
+    desenharEfeitosPoderes(ctx);   // auras dos poderes por trás do personagem
+
     // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
     if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed, tempoRender);
     if (USAR_PERSONAGEM_NOVO) { desenharUnicornio(ctx, player.x, player.y, player, tempoRender, 1.3); }
@@ -5052,6 +5202,9 @@ function render() {
     else if (player.char.id === 22) { drawRabbit(ctx, player); }
     else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
+    desenharSelosPoderes(ctx);   // x2, canguru, trevo... sobre a cabeça + labareda do foguete
+
+    desenharVinhetaPoder(ctx);   // moldura colorida da câmera lenta, buraco negro, foguete...
 
     // ── FAIXA DE NOVA FASE ──
     if (phaseAnnounceFrames > 0) {
