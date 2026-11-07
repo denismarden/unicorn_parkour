@@ -23,8 +23,9 @@ Tema visual: "noite mágica" (céu roxo/azul escuro, aurora, estrelas) + platafo
   (`renderInterpolado`, `CAMPOS_INTERP`, `alfaRender`). Ao teleportar um valor, chame `semInterpolar('campo')`.
   Toda física conta em "passos" (1 passo = 1/60 s), nunca em frames de tela.
 - **Ajustes**: valores de jogo são constantes no topo de `game.js` (`FORCA_PULO`, `GRAVIDADE_BASE`, `PASSOS_COYOTE`…);
-  cores do cenário em `PALETA` e `FASES_VISUAL`. Por fase: tema do céu em `obterCenario` (`ceuExtra`: constelação/planeta/ilhas/nebulosa),
-  material das plataformas em `materialDaFase` (nuvem/cristal/doce/arco-íris), silhuetas em `decorDaFase`.
+  cores do cenário em `PALETA` e `FASES_VISUAL`. Por fase: `TEMA_FASE[id]` → `TEMAS` (longe: perfil das montanhas,
+  perto: silhuetas, marco: construção grande, astro: `spriteAstro`, ar: partículas `desenharAr`, material das plataformas
+  em `spriteNuvem`, ceu: detalhe em `ceuExtra`); o "chão" do fundo (lava/água/areia/neve...) vem de `MAR_TEMA` em `obterCenario`.
 - **Desempenho**: partículas em pool fixo (`emitirParticula`, `MAX_PARTICULAS = 150`); brilhos e formas são
   sprites pré-renderizados em cache (`spriteCache`, `spriteLuz`, `spriteEstrelinha`, `spritePoeira`, `spriteForma`).
   Nada de `shadowBlur` nem de criar objetos/gradientes novos a cada quadro.

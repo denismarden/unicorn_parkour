@@ -370,6 +370,25 @@ async function rodar() {
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);
+
+        // cenários: toda fase tem tema, e o fundo + plataformas de todas as fases desenham sem erro
+        ok(TEMA_FASE.length === PHASES.length && TEMA_FASE.every(t => TEMAS[t]), `todas as ${PHASES.length} fases têm tema de cenário`);
+        ok(new Set(TEMA_FASE).size >= 20, `cenários variados (${new Set(TEMA_FASE).size} temas)`);
+        {
+            const errosAntes = window.__erros.length; let erroCen = '';
+            const faseOrig = currentPhase;
+            try {
+                for (let f = 0; f < PHASES.length; f++) {
+                    currentPhase = f; cacheCenario = null;
+                    desenharFundo(f, 1234 + f * 500, 0, 0);
+                    for (const tipo of ['normal', 'movel', 'chuva']) spriteNuvem(200, tipo, FASES_VISUAL[f]);
+                }
+            } catch (e) { erroCen = e.message; }
+            currentPhase = faseOrig; cacheCenario = null;
+            ok(!erroCen && window.__erros.length === errosAntes, `cenário das 30 fases desenha sem erro ${erroCen}`);
+            const mats = new Set(PHASES.map((_, i) => materialDaFase(i)));
+            ok(['rocha', 'gelo', 'metal', 'areia'].every(m => mats.has(m)), `plataformas com materiais por tema (${[...mats].join(', ')})`);
+        }
     } catch (e) {
         log.push('EXCEÇÃO ' + e.message + ' ' + e.stack);
     }
