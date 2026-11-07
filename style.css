@@ -622,3 +622,14 @@ canvas.retrato { position: static; width: 140px; height: 104px; display: block; 
 @media (max-width: 600px) {
     .fase-display { position: static; transform: none; font-size: 0.95rem; padding: 6px 12px; }
 }
+
+/* Game over: estrelas ganhas contando e dando um "pop" dourado no fim */
+.ganho-estrelas { display: inline-block; color: #FFE08A; font-weight: 700; }
+.ganho-estrelas.ganho-pop { animation: ganhoPop 0.45s ease-out; }
+@keyframes ganhoPop {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.35); text-shadow: 0 0 12px rgba(255, 224, 138, 0.9), 0 2px 0 #2A1450; }
+    100% { transform: scale(1); }
+}
+.carteira-final { font-size: 0.9rem; opacity: 0.8; margin-top: -6px; }
+@media (prefers-reduced-motion: reduce) { .ganho-estrelas.ganho-pop { animation: none; } }

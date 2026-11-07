@@ -129,7 +129,9 @@ async function rodar() {
         ok(state === 'gameover', 'game over aparece depois');
         const esperado = Math.floor(1000 * CONVERSAO_ESTRELAS);
         ok(globalStars === estrelasAntes + esperado, `carteira recebe ${CONVERSAO_ESTRELAS * 100}%: +${globalStars - estrelasAntes}`);
+        await espera(1200);   // a contagem do ganho leva ~0,9 s
         ok(finalStars.textContent.indexOf(esperado.toLocaleString()) >= 0, `game over mostra o ganho da loja (${finalStars.textContent})`);
+        ok(document.getElementById('final-carteira').textContent === globalStars.toLocaleString(), 'game over mostra o total da carteira');
         ok(starsDisplay.textContent === esperado.toLocaleString(), `HUD mostra estrelas para a loja (${starsDisplay.textContent})`);
 
         // #33 menu volta ao estado menu
