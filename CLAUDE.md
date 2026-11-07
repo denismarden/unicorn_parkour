@@ -35,7 +35,9 @@ Tema visual: "noite mágica" (céu roxo/azul escuro, aurora, estrelas) + platafo
   Retratos dos cards: `desenharRetrato(canvas, char, visual, extra)`.
 - **Salvo no navegador (localStorage, prefixo `uniparkour`)**: `GlobalStars` (carteira), `Chars` (personagens comprados),
   `Char` (escolhido), `Skins` (auras e itens de visual comprados), `ActiveSkin` (aura), `Visual` (pelagem/rastro/chifre/chapéu),
-  `Upgrades`, `PUDur`, `Mission`, `Recorde`, `Partidas`, `Muted`. Nunca renomear chaves: o progresso dos jogadores se perderia.
+  `Upgrades`, `PUDur`, `MissoesDia` (3 missões do dia + baú), `Sequencia` (dias seguidos), `Recorde`, `Partidas`, `Muted`
+  (`Mission` é a missão antiga, não usada). Nunca renomear chaves: o progresso dos jogadores se perderia.
+  Ler sempre com `lerJSON(chave, padrão, validação)`: save corrompido não pode derrubar o jogo.
 - **Placar online**: Firebase REST (`URL_PLACAR`); o jogo só ADICIONA recordes (as regras proíbem apagar/alterar).
 
 ## Como rodar e testar

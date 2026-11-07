@@ -11,6 +11,7 @@ const GRAVIDADE_BASE = 0.6;           // gravidade por passo
 const FORCA_PULO = -12;               // velocidade vertical inicial do pulo
 const MULT_GRAVIDADE_QUEDA = 1.6;     // a queda é mais pesada que a subida
 const CORTE_PULO = 0.5;               // soltar o botão na subida multiplica a velocidade por isto
+const PASSOS_PULO_MIN = 6;            // o corte só vale depois de 6 passos no ar: toque rápido ainda dá um pulo útil (~74 px)
 const PASSOS_BUFFER_PULO = 8;         // ~133 ms: pulo apertado pouco antes de pousar ainda vale
 const PASSOS_COYOTE = 6;              // ~100 ms: depois de sair da borda ainda conta como "no chão"
 const VEL_SLAM = 30;                  // velocidade de descida do slam
@@ -21,6 +22,11 @@ const MULT_CURVA_DASH = 1.5;          // dash com entrada/saída suave (1.5 mant
 const VEL_MIN_SLAM = 15;              // abaixo disso o pouso não conta como slam
 const DURACAO_DASH = 0.3;             // s
 const RECARGA_DASH = 3.0;             // s
+const MOLA_RIGIDEZ = 0.22, MOLA_AMORTECIMENTO = 0.28;   // squash & stretch: força da mola e quanto ela freia
+const ESTICADA_SLAM = 1.18;           // escala vertical durante o slam (desce "esticado")
+const SUAVIZACAO_POSE_AR = 0.35;      // quanto a pose das patas no ar anda por passo até a nova pose
+const ATRASO_CABELO = 0.14;           // crina/cauda seguem a subida/queda com atraso (menor = mais atraso)
+const BUFFER_DASH = 0.15;            // s — dash apertado até 0,15 s antes de recarregar não se perde
 const BONUS_VEL_DASH = 25;            // velocidade extra durante o dash
 const ACELERACAO_JOGO = 0.0004;       // aumento da velocidade alvo a cada passo
 const VEL_MAXIMA = 22;                // teto da velocidade do jogo
@@ -39,10 +45,14 @@ const FATOR_CORRIDA = 0.11;           // velocidade das patas por unidade de vel
 const MAX_PASSO_CORRIDA = 0.9;        // limite para as patas não "embaralharem" em alta velocidade
 const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance real do personagem
 const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
-const CHANCE_POWERUP = 0.035;         // por plataforma
+const CHANCE_POWERUP = 0.06;          // por plataforma (~2 power-ups por minuto)
 const CHANCE_OMNI = 0.02;             // por plataforma (no máximo 1 por fase)
 const CONVERSAO_ESTRELAS = 0.5;       // fração das estrelas da partida que vai para a carteira
+const LARGURA_MIN_ESPINHO = 110;      // plataformas estreitas (fases finais) ainda podem ter espinho no meio
+const CHANCE_OBST_FASE1_VETERANO = 0.08; // depois de 3 partidas, a fase 1 já tem alguns obstáculos
+const DIST_TREINO_DASH = 4300, DIST_TREINO_SLAM = 6100; // tutorial: barreira e bloco logo depois das dicas
 const MIN_LARGURA_PLATAFORMA = 80;    // evita janelas de pouso de 2-3 frames nas fases finais
+const GORJETA_POR_NIVEL = 500;        // "Gorjeta Inicial": estrelas para a loja por nível, por partida
 const CUSTO_POR_PERSONAGEM = 800;     // preço = id × este valor (os 3 primeiros são livres)
 
 const canvas = document.getElementById('game-canvas');
@@ -73,7 +83,8 @@ const PALETA = {
     texto: '#FFF6E8', textoContorno: '#2A1450', destaque: '#FFE08A',
     vagalume: '#FFF3A0', sombraJogador: '#000000'
 };
-const FONTE_JOGO = "'Fredoka', 'Segoe UI', system-ui, sans-serif";
+const DENSIDADE_FUNDO_CELULAR = 1;    // resolução do fundo no celular (1 = leve; 2 = nítido e pesado)
+const FONTE_JOGO ="'Fredoka', 'Segoe UI', system-ui, sans-serif";
 
 // Detecta aparelho de toque — mostra os controles mobile só em telas de toque
 const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -85,7 +96,7 @@ const gameContainer = document.getElementById('game-container');
 function resize() {
     const rect = gameContainer.getBoundingClientRect();
     const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
-    const chAntigo = ch;
+    const chAntigo = ch, cwAntigo = cw;
     if (isTouchDevice()) {
         if (cssH > cssW) { cw = 900; ch = Math.round(900 * cssH / cssW); }
         else { ch = 900; cw = Math.round(900 * cssW / cssH); }
@@ -93,16 +104,26 @@ function resize() {
         cw = Math.round(cssW); ch = Math.round(cssH);
     }
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const escala = (cssW * dpr) / cw;
     for (const [cv, c2d] of [[canvas, ctx], [bgCanvas, bgCtx]]) {
-        cv.width = Math.round(cssW * dpr);
-        cv.height = Math.round(cssH * dpr);
+        // no celular o fundo (macio: degradês, aurora) usa densidade 1 — bem mais leve para a GPU;
+        // o canvas do jogo continua nítido
+        const d = (cv === bgCanvas && isTouchDevice()) ? Math.min(dpr, DENSIDADE_FUNDO_CELULAR) : dpr;
+        cv.width = Math.round(cssW * d);
+        cv.height = Math.round(cssH * d);
+        const escala = (cssW * d) / cw;
         c2d.setTransform(escala, 0, 0, escala, 0, 0);
     }
     gerarEstrelasFundo();
     cacheCenario = null;
-    if (chAntigo && chAntigo !== ch) reescalarMundo(chAntigo);
-    else if (chAntigo && typeof state !== 'undefined' && state === 'playing' && isPaused) render();
+    if (!chAntigo) return;   // 1ª chamada (antes de 'state' existir: não pode nem ser lido)
+    if (chAntigo !== ch) reescalarMundo(chAntigo);
+    else if (state === 'playing' && cwAntigo !== cw && player) {
+        // só a largura mudou: o personagem volta a 20% da tela (senão fica colado na borda direita)
+        player.x = cw * 0.2; player.ant = null; limparEfeitosPersonagem(player);
+        if (!isPaused) alternarPausa(); else render();
+    }
+    else if (state === 'playing' && isPaused) render();
+    if (state === 'gameover' && player) render();   // redimensionar apaga o canvas: redesenha o último quadro
 }
 
 function gerarEstrelasFundo() {
@@ -199,10 +220,6 @@ const mobilePauseBtn = document.getElementById('mobile-pause');
 
 const btnMute = document.getElementById('btn-mute');
 const globalStarsDisplay = document.getElementById('global-stars-display');
-const missionDesc = document.getElementById('mission-desc');
-const missionProgressBar = document.getElementById('mission-progress-bar');
-const missionProgressText = document.getElementById('mission-progress-text');
-const missionReward = document.getElementById('mission-reward');
 const toastContainer = document.getElementById('toast-container');
 
 const nameInputContainer = document.getElementById('name-input-container');
@@ -212,9 +229,23 @@ const playerNameInput = document.getElementById('player-name');
 // Carteira começa em 0 para jogadores novos (quem já tem estrelas salvas mantém o saldo)
 const _estrelasSalvas = localStorage.getItem('uniparkourGlobalStars');
 let globalStars = _estrelasSalvas === null ? 0 : (parseInt(_estrelasSalvas) || 0);
-let unlockedChars = JSON.parse(localStorage.getItem('uniparkourChars')) || [0, 1, 2];
+// Lê um valor salvo sem nunca derrubar o jogo: se estiver corrompido ou no formato errado, usa o padrão
+// (a chave NÃO é apagada, para não perder progresso por causa de um erro temporário)
+function lerJSON(chave, padrao, valido = () => true) {
+    try {
+        const txt = localStorage.getItem(chave);
+        if (txt === null) return padrao;
+        const v = JSON.parse(txt);
+        return (v !== null && valido(v)) ? v : padrao;
+    } catch (e) {
+        console.warn('Save corrompido em', chave, e);
+        return padrao;
+    }
+}
+const ehObjeto = (v) => typeof v === 'object' && !Array.isArray(v);
+let unlockedChars = lerJSON('uniparkourChars', [0, 1, 2], Array.isArray);
 let partidasJogadas = parseInt(localStorage.getItem('uniparkourPartidas')) || 0;
-let savedUpgrades = JSON.parse(localStorage.getItem('uniparkourUpgrades')) || {};
+let savedUpgrades = lerJSON('uniparkourUpgrades', {}, ehObjeto);
 const defaultUpgrades = {
     jump: 0, score: 0, shield: 0, magnet: 0, dash_cd: 0, dash_pwr: 0,
     slam_score: 0, pu_time: 0, start_stars: 0, jump_pwr: 0, lucky_mult: 0,
@@ -223,11 +254,9 @@ const defaultUpgrades = {
 };
 let unlockedUpgrades = { ...defaultUpgrades, ...savedUpgrades };
 
-let unlockedSkins = JSON.parse(localStorage.getItem('uniparkourSkins')) || ['default'];
+let unlockedSkins = lerJSON('uniparkourSkins', ['default'], Array.isArray);
 let selectedSkin = localStorage.getItem('uniparkourActiveSkin') || 'default';
-let currentMission = JSON.parse(localStorage.getItem('uniparkourMission')) || null;
-let isMuted = JSON.parse(localStorage.getItem('uniparkourMuted'));
-if (isMuted === null) isMuted = false;
+let isMuted = lerJSON('uniparkourMuted', false, (v) => typeof v === 'boolean');
 let globalPowerupDurMult = parseFloat(localStorage.getItem('uniparkourPUDur')) || 1.0;
 
 let audioCtx = null;
@@ -242,12 +271,14 @@ let gameSpeedAlvo = 5;
 let passosMorte = 0;
 let plataformasFaceis = 0;
 let mostrarTutorial = false;
+let tutorialObst = {};   // obstáculos de treino do tutorial já colocados nesta partida
 let tutorialIdx = 0;
 
 let state = 'menu';
 let isPaused = false;
 let score = 0;
 let starsCollected = 0;
+let gorjetaInicial = 0;   // estrelas do poder "Gorjeta Inicial" (só valem se a partida chegar à fase 2)
 let distance = 0;
 let gameSpeed = 5;
 let frames = 0;
@@ -507,12 +538,23 @@ const PHASES = [
 // Variações de plataforma por tema: chance de plataforma móvel (sobe e desce) ou quebradiça (cai ~0,6 s após pisar)
 const MODS_FASE = {
     1: { movel: 0.4 },              // Ilhas Flutuantes
+    2: { quebra: 0.15 },
     3: { quebra: 0.25 },            // Cavernas de Lava
+    4: { movel: 0.25 },
     5: { movel: 0.4 },              // Órbita Cósmica
+    6: { movel: 0.3, quebra: 0.1 },
+    7: { quebra: 0.3 },
     8: { quebra: 0.4 },             // Dimensão Sombria
+    9: { movel: 0.35, quebra: 0.15 },
+    10: { movel: 0.4, quebra: 0.2 },
     11: { movel: 0.5 },             // Abismo Oceânico
     12: { movel: 0.3, quebra: 0.2 },// Ruínas Mecânicas
+    13: { quebra: 0.3 },
+    14: { movel: 0.4 },
+    15: { movel: 0.3, quebra: 0.2 },
     16: { quebra: 0.35 },           // Cratera Vulcânica
+    17: { movel: 0.35, quebra: 0.25 },
+    18: { quebra: 0.45 },
     19: { movel: 0.5 }              // Fronteira Galáctica
 };
 
@@ -522,7 +564,8 @@ const MODS_FASE = {
 {
     let distAcumulada = 0;
     PHASES.forEach((ph, i) => {
-        ph.mods = MODS_FASE[i] || (i >= 20 ? { movel: 0.3, quebra: 0.25 } : {});
+        // da fase 21 em diante alterna o tema: fase par só móveis, ímpar só quebradiças
+        ph.mods = MODS_FASE[i] || (i >= 20 ? (i % 2 === 0 ? { movel: 0.5 } : { quebra: 0.45 }) : {});
         ph.minW = Math.max(ph.minW, MIN_LARGURA_PLATAFORMA);
         ph.maxW = Math.max(ph.maxW, ph.minW + 40);
         ph.distThreshold = distAcumulada;
@@ -557,6 +600,15 @@ function topDezDe(data) {
         .slice(0, 10);
 }
 
+// fetch com tempo limite: rede travada não prende a tela
+function fetchComPrazo(url, opcoes = {}, ms = 8000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opcoes, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+let placarCarregado = false;   // só decide "entrou no Top 10?" depois de conhecer o placar
+
 async function loadLeaderboard() {
     const listEl = document.getElementById('leaderboard-list');
     if (listEl) listEl.innerHTML = '<p style="text-align:center;color:#aaa;">⏳ Carregando...</p>';
@@ -565,9 +617,10 @@ async function loadLeaderboard() {
         try {
             // Baixa só o top 10 (precisa do ".indexOn": "score" das regras em database.rules.json).
             // Se as regras ainda não foram publicadas, o Firebase recusa e baixamos a lista inteira.
-            let res = await fetch(`${URL_PLACAR}?orderBy=${encodeURIComponent('"score"')}&limitToLast=10`);
-            if (!res.ok) res = await fetch(URL_PLACAR);
+            let res = await fetchComPrazo(`${URL_PLACAR}?orderBy=${encodeURIComponent('"score"')}&limitToLast=10`);
+            if (!res.ok) res = await fetchComPrazo(URL_PLACAR);
             leaderboard = topDezDe(await res.json());
+            placarCarregado = true;
             return leaderboard;
         } catch (err) {
             console.warn('Firebase indisponível, usando localStorage:', err);
@@ -575,7 +628,8 @@ async function loadLeaderboard() {
         }
     }
     // Fallback local
-    leaderboard = JSON.parse(localStorage.getItem('unicornLeaderboard') || '[]');
+    leaderboard = topDezDe(lerJSON('unicornLeaderboard', [], Array.isArray));
+    placarCarregado = true;
     return leaderboard;
 }
 
@@ -584,7 +638,7 @@ async function loadLeaderboard() {
 async function addScoreOnline(entry) {
     if (_firebaseAvailable) {
         try {
-            const res = await fetch(URL_PLACAR, {
+            const res = await fetchComPrazo(URL_PLACAR, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...entry, ts: Date.now() })
@@ -599,10 +653,10 @@ async function addScoreOnline(entry) {
             console.warn('Erro ao salvar no Firebase:', err);
         }
     }
-    // Fallback local
-    leaderboard.push(entry);
-    leaderboard.sort((a, b) => b.score - a.score);
-    leaderboard = leaderboard.slice(0, 10);
+    // Fallback local: só a lista LOCAL (não mistura com o placar global que estava na memória)
+    const local = topDezDe(lerJSON('unicornLeaderboard', [], Array.isArray));
+    local.push(entry);
+    leaderboard = topDezDe(local);
     localStorage.setItem('unicornLeaderboard', JSON.stringify(leaderboard));
 }
 
@@ -640,7 +694,10 @@ function renderLeaderboard() {
     }
 }
 
-function checkHighScore(finalPt) {
+async function checkHighScore(finalPt) {
+    if (finalPt <= 0) return;
+    if (!placarCarregado) await loadLeaderboard();   // sem conhecer o placar, "qualquer ponto" parecia Top 10
+    if (state !== 'gameover') return;                // o jogador já saiu da tela enquanto carregava
     const threshold = leaderboard.length < 10 ? 0 : (leaderboard[leaderboard.length - 1]?.score ?? 0);
     if (finalPt > threshold) {
         nameInputContainer.classList.remove('hidden');
@@ -657,14 +714,17 @@ btnSaveScore.onclick = async () => {
     btnSaveScore.disabled = true;
     btnSaveScore.textContent = '💾 Salvando...';
 
-    await addScoreOnline(entry);
-
-    btnSaveScore.disabled = false;
-    btnSaveScore.textContent = 'Salvar';
-    nameInputContainer.classList.add('hidden');
-    btnRestart.classList.remove('hidden');
-    btnMenuGo.classList.remove('hidden');
+    try {
+        await addScoreOnline(entry);
+    } finally {   // aconteça o que acontecer, os botões voltam
+        btnSaveScore.disabled = false;
+        btnSaveScore.textContent = 'Salvar';
+        nameInputContainer.classList.add('hidden');
+        btnRestart.classList.remove('hidden');
+        btnMenuGo.classList.remove('hidden');
+    }
 };
+loadLeaderboard();   // já ao abrir a página (sem esperar), para o game over saber quem entra no Top 10
 
 btnLeaderboard.onclick = async () => {
     mainMenu.classList.add('hidden');
@@ -679,6 +739,7 @@ btnLeaderboard.onclick = async () => {
 btnLeadBack.onclick = () => {
     leaderboardMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
+    iniciarLoopMenu();
 };
 
 // Zerar o placar global não é mais possível pelo jogo: as regras do Firebase (database.rules.json)
@@ -697,7 +758,7 @@ btnMute.onclick = () => {
 };
 btnMute.innerText = isMuted ? '🔇' : '🔊';
 
-function playSound(type) {
+function playSound(type, forca = 1) {
     if (isMuted || !audioCtx) return;
     let osc = audioCtx.createOscillator();
     let gain = audioCtx.createGain();
@@ -734,6 +795,22 @@ function playSound(type) {
         gain.gain.setValueAtTime(0.2, now);
         gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
         osc.start(now); osc.stop(now + 0.3);
+    } else if (type === 'land') {
+        // pouso: "tum" curto e grave, mais alto quanto mais forte a queda
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.08);
+        gain.gain.setValueAtTime(0.03 + 0.09 * forca, now);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.09);
+        osc.start(now); osc.stop(now + 0.09);
+    } else if (type === 'slam') {
+        // slam: impacto mais grave e longo que o de quebrar obstáculo
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(110, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.4);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+        osc.start(now); osc.stop(now + 0.4);
     } else if (type === 'dash') {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(200, now);
@@ -842,57 +919,108 @@ function showToast(msg) {
     }, 3000);
 }
 
+// ── Missões do dia: 3 por dia (as mesmas o dia inteiro), baú ao completar as 3 e bônus por dias seguidos ──
+// Salvo em 'uniparkourMissoesDia' e 'uniparkourSequencia' (a chave antiga 'uniparkourMission' não é mais usada).
 const TIPOS_MISSAO = [
-    { type: 'stars', target: 3000, reward: 600, desc: 'Colete 3.000 em valor de estrelas' },
-    { type: 'jumps', target: 50, reward: 300, desc: 'Realize 50 pulos' },
-    { type: 'score', target: 10000, reward: 800, desc: 'Some 10.000 pontos de distância' },
-    { type: 'slams', target: 10, reward: 500, desc: 'Faça 10 slams' },
-    { type: 'dashes', target: 15, reward: 400, desc: 'Use o dash 15 vezes' },
-    { type: 'powerups', target: 8, reward: 500, desc: 'Pegue 8 power-ups' },
-    { type: 'fases', target: 5, reward: 900, desc: 'Avance 5 fases' },
-    { type: 'obstaculos', target: 10, reward: 700, desc: 'Destrua 10 obstáculos' }
+    { type: 'stars', target: 15000, reward: 2500, desc: 'Colete 15.000 em valor de estrelas' },
+    { type: 'jumps', target: 150, reward: 1500, desc: 'Dê 150 pulos' },
+    { type: 'score', target: 4000, reward: 2500, desc: 'Some 4.000 pontos de distância' },
+    { type: 'slams', target: 10, reward: 2000, desc: 'Faça 10 slams' },
+    { type: 'dashes', target: 15, reward: 1500, desc: 'Use o dash 15 vezes' },
+    { type: 'powerups', target: 8, reward: 2000, desc: 'Pegue 8 power-ups' },
+    { type: 'fases', target: 5, reward: 4000, desc: 'Avance 5 fases' },
+    { type: 'obstaculos', target: 10, reward: 3000, desc: 'Destrua 10 obstáculos' }
 ];
+const PREMIO_BAU_DIARIO = 5000;       // completar as 3 missões do dia
+const BONUS_SEQUENCIA = 0.1;          // +10% nos prêmios por dia seguido jogado (até 2×)
+
+const hojeTexto = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+function multSequencia() { return Math.min(2, 1 + BONUS_SEQUENCIA * Math.max(0, sequencia.dias - 1)); }
+
+let missoesDia = lerJSON('uniparkourMissoesDia', null, ehObjeto);
+let sequencia = lerJSON('uniparkourSequencia', { ultimoDia: '', dias: 0 }, ehObjeto);
 
 function salvarMissao() {
-    if (currentMission) localStorage.setItem('uniparkourMission', JSON.stringify(currentMission));
+    localStorage.setItem('uniparkourMissoesDia', JSON.stringify(missoesDia));
+    localStorage.setItem('uniparkourSequencia', JSON.stringify(sequencia));
+}
+
+// Sorteia as 3 missões do dia (semente = data: todo mundo tem as mesmas no mesmo dia) e conta a sequência
+function prepararMissoesDoDia() {
+    const hoje = hojeTexto();
+    if (missoesDia && missoesDia.dia === hoje && Array.isArray(missoesDia.missoes)) return;
+    const ontem = new Date(); ontem.setDate(ontem.getDate() - 1);
+    sequencia.dias = sequencia.ultimoDia === hojeTexto(ontem) ? sequencia.dias + 1 : 1;
+    sequencia.ultimoDia = hoje;
+    const rnd = aleatorioSemente(hoje.split('-').reduce((s, n) => s * 37 + Number(n), 7));
+    const tipos = TIPOS_MISSAO.slice();
+    const escolhidas = [];
+    while (escolhidas.length < 3) escolhidas.push(tipos.splice(Math.floor(rnd() * tipos.length), 1)[0]);
+    missoesDia = { dia: hoje, bau: false, missoes: escolhidas.map(m => ({ ...m, current: 0, feita: false })) };
+    salvarMissao();
 }
 
 function updateMissionUI() {
-    if (!currentMission) {
-        const m = TIPOS_MISSAO[Math.floor(Math.random() * TIPOS_MISSAO.length)];
-        currentMission = { ...m, current: 0 };
-        salvarMissao();
+    prepararMissoesDoDia();
+    const painel = document.getElementById('missions-lista');
+    if (!painel) return;
+    const mult = multSequencia();
+    painel.textContent = '';
+    for (const m of missoesDia.missoes) {
+        const linha = document.createElement('div');
+        linha.className = 'missao-linha' + (m.feita ? ' feita' : '');
+        const desc = document.createElement('div'); desc.className = 'missao-desc';
+        desc.textContent = (m.feita ? '✅ ' : '') + m.desc;
+        const trilho = document.createElement('div'); trilho.className = 'missao-trilho';
+        const barra = document.createElement('div'); barra.className = 'missao-barra';
+        barra.style.width = Math.min(100, m.current / m.target * 100) + '%';
+        trilho.appendChild(barra);
+        const rodape = document.createElement('div'); rodape.className = 'missao-rodape';
+        const prog = document.createElement('span'); prog.textContent = `${Math.min(m.target, Math.floor(m.current)).toLocaleString()} / ${m.target.toLocaleString()}`;
+        const premio = document.createElement('span'); premio.className = 'missao-premio'; premio.textContent = `🎁 +${Math.round(m.reward * mult).toLocaleString()}`;
+        rodape.append(prog, premio);
+        linha.append(desc, trilho, rodape);
+        painel.appendChild(linha);
     }
-    missionDesc.innerText = currentMission.desc;
-    let pct = Math.min(100, (currentMission.current / currentMission.target) * 100);
-    missionProgressBar.style.width = pct + '%';
-    missionProgressText.innerText = `${Math.floor(currentMission.current)} / ${currentMission.target}`;
-    missionReward.innerText = `🎁 +${currentMission.reward}`;
+    const feitas = missoesDia.missoes.filter(m => m.feita).length;
+    document.getElementById('missions-extra').textContent =
+        `${missoesDia.bau ? '🎉 Baú do dia aberto!' : `🧰 Baú: ${feitas}/3 → +${Math.round(PREMIO_BAU_DIARIO * mult).toLocaleString()}`}` +
+        `  ·  🔥 ${sequencia.dias} dia${sequencia.dias > 1 ? 's' : ''} seguido${sequencia.dias > 1 ? 's' : ''} (×${mult.toFixed(1)})`;
 }
-updateMissionUI();
 
-function completeMission() {
-    if (!currentMission) return;
-    showToast(`Missão Cumprida: +${currentMission.reward} Estrelas!`);
-    playSound('buy');
-    globalStars += currentMission.reward;
+function pagarEstrelas(qtd) {
+    globalStars += qtd;
     localStorage.setItem('uniparkourGlobalStars', globalStars);
     updateGlobalStarsDisplay();
-    // Zera a missão para gerar uma nova
-    currentMission = null;
-    localStorage.removeItem('uniparkourMission');
-    updateMissionUI(); // Gera nova missão automaticamente dentro de updateMissionUI
 }
+
+function completeMission(m) {
+    m.feita = true;
+    const mult = multSequencia();
+    const premio = Math.round(m.reward * mult);
+    showToast(`Missão cumprida: +${premio.toLocaleString()} 🌟`);
+    playSound('buy');
+    pagarEstrelas(premio);
+    if (!missoesDia.bau && missoesDia.missoes.every(x => x.feita)) {
+        missoesDia.bau = true;
+        const bau = Math.round(PREMIO_BAU_DIARIO * mult);
+        setTimeout(() => showToast(`🧰 Baú do dia: +${bau.toLocaleString()} 🌟`), 900);
+        pagarEstrelas(bau);
+    }
+    salvarMissao();
+}
+
+updateMissionUI();
 
 function checkMission(type, amount) {
-    if (!currentMission) return;
-    if (currentMission.type === type) {
-        currentMission.current += amount;
-        // Progresso fica em memória e é salvo no fim da partida (evita gravar no localStorage a cada frame)
-        if (currentMission.current >= currentMission.target) completeMission();
+    if (!missoesDia) return;
+    // Progresso fica em memória e é salvo no fim da partida (evita gravar no localStorage a cada frame)
+    for (const m of missoesDia.missoes) {
+        if (m.feita || m.type !== type) continue;
+        m.current += amount;
+        if (m.current >= m.target) completeMission(m);
     }
 }
-
 
 // 3D Shader Vector Characters Characters Data
 const characters = [
@@ -954,7 +1082,7 @@ const upgrades = [
     { id: 'dash_pwr', name: 'Super Dash', desc: 'Aumenta a velocidade do dash', cost: 22000, maxLevel: 3 },
     { id: 'slam_score', name: 'Impacto Lucrativo', desc: '+Pontos ao realizar Slam', cost: 12000, maxLevel: 5 },
     { id: 'pu_time', name: 'Maestria Arcana', desc: 'Magias duram +10%', cost: 25000, maxLevel: 4 },
-    { id: 'start_stars', name: 'Gorjeta Inicial', desc: 'Inicia com 100 estrelas per lvl', cost: 10000, maxLevel: 5 },
+    { id: 'start_stars', name: 'Gorjeta Inicial', desc: '+500 🌟 para a loja por nível em cada partida (a partir da fase 2)', cost: 10000, maxLevel: 5 },
     { id: 'jump_pwr', name: 'Músculos Tensos', desc: 'Pula levemente mais alto', cost: 20000, maxLevel: 3 },
     { id: 'lucky_mult', name: 'Trevo de Ouro', desc: 'Bônus lucky aumenta', cost: 30000, maxLevel: 3 },
     { id: 'meteor_pts', name: 'Cratera de Pontos', desc: 'Slam do meteoro mais valioso', cost: 28000, maxLevel: 3 },
@@ -962,7 +1090,7 @@ const upgrades = [
     { id: 'free_revive', name: 'Segunda Chance', desc: 'Uma revivida passiva gratuita', cost: 80000, maxLevel: 1 },
     { id: 'gravity_f', name: 'Ossos Ocos', desc: 'Reduz a gravidade', cost: 24000, maxLevel: 3 },
     { id: 'slowmo_score', name: 'Tempo é Dinheiro', desc: 'Ganha mais pontos no slowmo', cost: 16000, maxLevel: 3 },
-    { id: 'coin_val', name: 'Pedras Preciosas', desc: 'Estrelas dão mais score', cost: 35000, maxLevel: 4 },
+    { id: 'coin_val', name: 'Pedras Preciosas', desc: '+25% no valor de cada estrela (vai para a loja)', cost: 35000, maxLevel: 4 },
     { id: 'star_spawn', name: 'Chuva Estelar', desc: 'Aumenta chance de estrelas', cost: 45000, maxLevel: 3 },
     { id: 'phase_chill', name: 'Pés no Chão', desc: 'Atrapalha a aceleração natural', cost: 60000, maxLevel: 2 },
     { id: 'magnet_spd', name: 'Tração Nuclear', desc: 'Magnetismo mais forte ainda', cost: 20000, maxLevel: 2 }
@@ -1094,7 +1222,7 @@ const CATEGORIAS_VISUAL = [
 
 // O que está equipado (ids). A aura continua em selectedSkin (compatível com o save antigo).
 const VISUAL_PADRAO = { pelagem: 'pel_nenhuma', rastro: 'ras_arcoiris', chifre: 'chi_dourado', chapeu: 'cha_nenhum' };
-let visualEquipado = { ...VISUAL_PADRAO, ...(JSON.parse(localStorage.getItem('uniparkourVisual')) || {}) };
+let visualEquipado = { ...VISUAL_PADRAO, ...lerJSON('uniparkourVisual', {}, ehObjeto) };
 let abaVisual = 'pelagem';
 
 const itemPorId = (cat, id) => CATEGORIAS_VISUAL.find(c => c.id === cat).itens().find(i => i.id === id);
@@ -1304,6 +1432,7 @@ function initGame() {
     score = 0;
     starsCollected = 0;
     estrelasHudAntes = -1;
+    gorjetaInicial = 0;
     distance = 0;
     currentPhase = 0;
     phaseAnnounceFrames = 0;
@@ -1320,7 +1449,7 @@ function initGame() {
     floatingTexts = [];
     aneis = [];
     isSlamming = false;
-    isDashing = false; dashCooldown = 0; dashTimeLeft = 0;
+    isDashing = false; dashCooldown = 0; dashTimeLeft = 0; pedidoDash = false;
     screenShake = 0; sleepFrames = 0;
     passosMorte = 0;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // Espaço não "clica" no botão focado
@@ -1329,6 +1458,7 @@ function initGame() {
     partidasJogadas++;
     localStorage.setItem('uniparkourPartidas', partidasJogadas);
     mostrarTutorial = partidasJogadas <= 3;
+    tutorialObst = {};
     tutorialIdx = 0;
     plataformasFaceis = mostrarTutorial ? 6 : 2;
 
@@ -1396,7 +1526,8 @@ function initGame() {
     limparEfeitosPersonagem(player); // estrelinhas da partida anterior não reaparecem
 
     if (unlockedUpgrades.start_stars > 0) {
-        starsCollected = unlockedUpgrades.start_stars * 100;
+        gorjetaInicial = unlockedUpgrades.start_stars * GORJETA_POR_NIVEL / CONVERSAO_ESTRELAS;   // +500 na loja por nível
+        starsCollected = gorjetaInicial;
     }
 
 
@@ -1467,6 +1598,14 @@ function alcanceDoPulo(subida) {
 }
 
 const POWERUP_TYPES = ['magnet', 'shield', 'bonus', 'slowmo', 'infjump', 'starchest', 'shrink', 'giant', 'meteor', 'rocket', 'blackhole', 'lucky', 'hover', 'coinshower', 'rainbow', 'jackpot', 'nogap'];
+// Raridade dos power-ups: úteis e comuns saem mais; os de economia (baú, chuva, jackpot) são raros
+const PESO_POWERUP = { magnet: 10, shield: 8, bonus: 8, slowmo: 6, infjump: 6, hover: 6, nogap: 5, rainbow: 5, shrink: 5, giant: 5, meteor: 4, rocket: 4, blackhole: 3, lucky: 3, starchest: 3, coinshower: 3, jackpot: 1 };
+const PESO_POWERUP_TOTAL = POWERUP_TYPES.reduce((s, t) => s + (PESO_POWERUP[t] || 1), 0);
+function sortearPowerup() {
+    let r = Math.random() * PESO_POWERUP_TOTAL;
+    for (const t of POWERUP_TYPES) { r -= PESO_POWERUP[t] || 1; if (r <= 0) return t; }
+    return POWERUP_TYPES[0];
+}
 const DIMENSOES_OBSTACULO = { espinho: [36, 22], barreira: [22, 150], bloco: [44, 44] };
 
 function generateWorld() {
@@ -1502,6 +1641,15 @@ function generateWorld() {
             trechoLivre = true;
         }
 
+        // Tutorial: um obstáculo "de treino" logo depois de cada dica (barreira → dash, bloco → slam),
+        // numa plataforma larga e reta, para o jogador testar na hora o que acabou de ler
+        let obstTutorial = null;
+        if (mostrarTutorial && !isNoGapActive && rainbowPlatformsCount <= 0) {
+            if (!tutorialObst.barreira && lastPlatformX >= DIST_TREINO_DASH) obstTutorial = tutorialObst.barreira = 'barreira';
+            else if (!tutorialObst.bloco && lastPlatformX >= DIST_TREINO_SLAM) obstTutorial = tutorialObst.bloco = 'bloco';
+            if (obstTutorial) { w = Math.max(w, 420); yOffset = 0; trechoLivre = true; }
+        }
+
         // Plataformas especiais do tema da fase
         let amp = 0, quebradica = false;
         if (gap > 0 && !trechoLivre) {
@@ -1528,12 +1676,21 @@ function generateWorld() {
         if (quebradica) { plat.quebradica = true; plat.tempoPisado = 0; plat.vyQueda = 0; }
         platforms.push(plat);
 
-        // Obstáculos (a partir da fase 2): espinho pede pulo, barreira pede dash (ou pulo duplo), bloco pede slam
-        if (!trechoLivre && currentPhase >= 1 && w >= 160 && Math.random() < Math.min(0.45, 0.12 + currentPhase * 0.015)) {
+        // Obstáculos (a partir da fase 2; veteranos já na fase 1): espinho pede pulo, barreira pede dash
+        // (ou pulo duplo), bloco pede slam. Plataformas estreitas das fases finais recebem só espinho, no meio.
+        const chanceObst = currentPhase >= 1 ? Math.min(0.45, 0.12 + currentPhase * 0.015)
+            : (partidasJogadas > 3 ? CHANCE_OBST_FASE1_VETERANO : 0);
+        if (obstTutorial) {
+            const [ow, oh] = DIMENSOES_OBSTACULO[obstTutorial];
+            obstaculos.push({ tipo: obstTutorial, plat, x: x + w * 0.5 - ow / 2, w: ow, h: oh, destruido: false });
+        } else if (!trechoLivre && w >= 160 && Math.random() < chanceObst) {
             const r = Math.random();
             const tipo = r < 0.5 ? 'espinho' : (r < 0.75 ? 'barreira' : 'bloco');
             const [ow, oh] = DIMENSOES_OBSTACULO[tipo];
             obstaculos.push({ tipo, plat, x: x + w * 0.4 + Math.random() * (w * 0.3 - ow), w: ow, h: oh, destruido: false });
+        } else if (!trechoLivre && w >= LARGURA_MIN_ESPINHO && currentPhase >= 1 && Math.random() < chanceObst) {
+            const [ow, oh] = DIMENSOES_OBSTACULO.espinho;
+            obstaculos.push({ tipo: 'espinho', plat, x: x + w * 0.5 - ow / 2, w: ow, h: oh, destruido: false });
         }
 
         let srMult = (player.char.spawnRateMult || 1.0) * (1 + ((unlockedUpgrades.star_spawn || 0) * 0.15));
@@ -1574,7 +1731,7 @@ function generateWorld() {
                 oscOffset: Math.random() * Math.PI * 2
             });
         } else if (Math.random() < CHANCE_POWERUP) {
-            let type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+            let type = sortearPowerup();
             powerupItems.push({
                 type,
                 x: x + w * 0.3 + Math.random() * w * 0.4,
@@ -1661,11 +1818,12 @@ function jump() {
         player.coyote = 0;
         player.bufferPulo = 0;
         player.podeCortarPulo = true;
-        // Pulo disparado pelo buffer depois que o botão já foi solto: sai baixo (toque rápido = pulo baixo)
-        if (!puloSegurado) { player.vy *= CORTE_PULO; player.podeCortarPulo = false; }
+        // Botão já solto (toque rápido ou pulo do buffer): sai baixo, mas só depois do pulo mínimo (ver step)
+        player.passosPulo = 0;
+
         isSlamming = false;
-        player.scaleX = noAr ? 0.7 : 0.5; // esticada (menor no ar)
-        player.scaleY = noAr ? 1.35 : 1.6;
+        player.scaleX = noAr ? 0.84 : 0.8; // esticada (suave: o rig inteiro é escalado)
+        player.scaleY = noAr ? 1.25 : 1.35; player.sqV = 0;
 
         // Mortal para trás no pulo duplo (ou a cada 2 pulos no pulo infinito)
         if (player.jumps % 2 === 0) {
@@ -1695,16 +1853,31 @@ function apertarPulo() {
 function soltarPulo() {
     puloSegurado = false;
     if (state !== 'playing' || !player) return;
+    // antes do pulo mínimo o corte fica "agendado" (o step corta quando completar PASSOS_PULO_MIN)
+    if ((player.passosPulo || 0) < PASSOS_PULO_MIN) return;
     if (player.podeCortarPulo && player.vy < 0 && !isFlying) player.vy *= CORTE_PULO;
     player.podeCortarPulo = false;
 }
 
+// Botão de DASH do celular mostra a recarga (só mexe no DOM quando o valor muda de verdade)
+let recargaDashTotal = RECARGA_DASH, pedidoDash = false, dashBtnNivel = -1;
+function atualizarBotaoDash() {
+    const nivel = dashCooldown > 0 ? Math.floor((1 - dashCooldown / recargaDashTotal) * 20) : 20;   // 0..20
+    if (nivel === dashBtnNivel) return;
+    dashBtnNivel = nivel;
+    mobileDashBtn.classList.toggle('recarregando', nivel < 20);
+    mobileDashBtn.style.setProperty('--pronto', (nivel / 20).toFixed(2));
+}
+
 function doDash() {
     if (state !== 'playing' || isPaused) return;
+    // apertou um pouco antes da recarga acabar: guarda o pedido e dispara quando ficar pronto
+    if (dashCooldown > 0 && dashCooldown <= BUFFER_DASH && !isDashing) { pedidoDash = true; return; }
     if (dashCooldown > 0 || isDashing) return;
+    pedidoDash = false;
     isDashing = true;
     dashTimeLeft = DURACAO_DASH;
-    dashCooldown = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
+    dashCooldown = recargaDashTotal = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
     isSlamming = false; // o dash cancela o slam (e o bônus dele)
     player.vy = 0;      // trava a altura já no primeiro passo
     // estouro de ar atrás do personagem
@@ -1857,7 +2030,28 @@ function gradCache(chave, criar) {
 }
 
 // Atualiza a pose do personagem a cada passo da física (não depende do FPS)
+// Mola do squash & stretch (por passo de física). Alvo 1, ou esticado para baixo durante o slam.
+function molaEscala(p) {
+    const alvo = (p === player && isSlamming) ? ESTICADA_SLAM : 1;
+    p.sqV = (p.sqV || 0) + (alvo - p.scaleY) * MOLA_RIGIDEZ - p.sqV * MOLA_AMORTECIMENTO;
+    p.scaleY += p.sqV;
+    p.scaleY = Math.max(0.45, Math.min(1.6, p.scaleY));
+    p.scaleX = 1 / Math.sqrt(p.scaleY);   // conserva o volume
+}
+
 function atualizarPose(p, vel) {
+    // Pose aérea suavizada por pata (dash, slam, mortal e voo mudam de pose aos poucos, não num quadro)
+    if (typeof poseArPata === 'function') {
+        if (!p.arSuave) p.arSuave = { d: poseArPata(p, true, tempoAnim), t: poseArPata(p, false, tempoAnim) };
+        for (const n of ['d', 't']) {
+            const alvo = poseArPata(p, n === 'd', tempoAnim), s = p.arSuave[n];
+            s[0] += (alvo[0] - s[0]) * SUAVIZACAO_POSE_AR; s[1] += (alvo[1] - s[1]) * SUAVIZACAO_POSE_AR;
+        }
+    }
+    // Crina e cauda com atraso (follow-through): seguem a subida/queda um pouco depois do corpo
+    p.vyCabelo = p.vyCabelo === undefined ? p.vy : p.vyCabelo + (p.vy - p.vyCabelo) * ATRASO_CABELO;
+    p.misCabelo = p.misCabelo === undefined ? p.mistura : p.misCabelo + (p.mistura - p.misCabelo) * ATRASO_CABELO;
+    p.velAnim = vel;
     // Patas no ritmo da velocidade real do jogo (aceleram no dash, desaceleram no slow-mo)
     if (p.onGround) p.runPhase += Math.min(vel * FATOR_CORRIDA, MAX_PASSO_CORRIDA);
     if (p.pouso) { p.pouso.t++; if (p.pouso.t > PASSOS_POUSO) p.pouso = null; }
@@ -1875,7 +2069,8 @@ function atualizarPose(p, vel) {
     for (const k in ar) p.poseAr[k] += (ar[k] - p.poseAr[k]) * 0.2;
 
     // Rotação suavizada (antes pulava direto ao sair do chão)
-    const alvoRot = p.onGround ? Math.sin(frames * 0.4) * 0.04 : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
+    // no chão: leve inclinação para a frente conforme a velocidade (o balanço vem do galope da espécie)
+    const alvoRot = p.onGround ? Math.min(0.05, vel * 0.0025) : Math.max(-0.3, Math.min(0.4, p.vy * 0.03));
     p.rot += (alvoRot - p.rot) * 0.3;
 
     // Piscar com intervalo aleatório
@@ -3205,7 +3400,7 @@ function renderInterpolado(alfa) {
 const DICAS_TUTORIAL = [
     { dist: 200, teclado: 'Espaço / ↑ / clique: pular (segure para ir mais alto)', toque: 'Toque na tela: pular (segure para ir mais alto)' },
     { dist: 1800, teclado: 'Aperte de novo no ar: pulo duplo!', toque: 'Toque de novo no ar: pulo duplo!' },
-    { dist: 3600, teclado: '→ ou D: Dash (atravessa barreiras)', toque: 'DASH: avanço rápido (atravessa barreiras)' },
+    { dist: 3600, teclado: '→ ou D: Dash atravessa barreiras e blocos (espinho, só pulando!)', toque: 'DASH atravessa barreiras e blocos (espinho, só pulando!)' },
     { dist: 5400, teclado: '↓ ou S no ar: Slam (quebra blocos)', toque: 'SLAM no ar: desce com tudo (quebra blocos)' },
     { dist: 7200, teclado: 'P ou Esc: pausar', toque: '⏸ para pausar' }
 ];
@@ -3281,8 +3476,9 @@ function step() {
     player.w += (targetW - player.w) * 0.1;
     player.h += (targetH - player.h) * 0.1;
 
-    // Squash & stretch voltando a 1
-    player.scaleX += (1 - player.scaleX) * 0.15;
+    // Squash & stretch com MOLA: passa um pouquinho do normal e volta ("boing"); a largura acompanha
+    // a altura (conserva o volume), então o personagem nunca fica fino E achatado ao mesmo tempo
+    molaEscala(player);
     player.scaleY += (1 - player.scaleY) * 0.15;
 
     // Mortal para trás: uma volta em DURACAO_GIRO segundos com ease-in-out; se pousar no meio, termina rápido
@@ -3309,6 +3505,11 @@ function step() {
     if (player.vy > tetoQueda) player.vy = tetoQueda;
 
     if (isHoverActive && player.vy > 0) player.vy *= 0.8;
+    // pulo mínimo: botão solto antes da hora → o corte acontece só ao completar PASSOS_PULO_MIN
+    player.passosPulo = (player.passosPulo || 0) + 1;
+    if (player.podeCortarPulo && !puloSegurado && player.passosPulo >= PASSOS_PULO_MIN && player.vy < 0 && !isFlying) {
+        player.vy *= CORTE_PULO; player.podeCortarPulo = false;
+    }
     if (player.podeCortarPulo && player.vy >= 0) player.podeCortarPulo = false;
 
     const yAntesDoPasso = player.y; // para a colisão usar o deslocamento REAL (o dash zera vy depois)
@@ -3328,7 +3529,17 @@ function step() {
     if (isRocketActive) effectiveSpeed += gameSpeed * (2.0 + ((unlockedUpgrades.rocket_spd || 0) * 0.5));
 
     // Dash
-    if (dashCooldown > 0) dashCooldown -= dt;
+    if (dashCooldown > 0) {
+        dashCooldown -= dt;
+        if (dashCooldown <= 0) {
+            dashCooldown = 0;
+            // pronto de novo: brilho leve no personagem e no botão; pedido guardado vira dash agora
+            aneis.push({ x: player.x + player.w / 2, y: player.y + player.h / 2, cor: '#9BE7FF', t: 0, raio: 18 });
+            mobileDashBtn.classList.remove('pronto-agora'); void mobileDashBtn.offsetWidth; mobileDashBtn.classList.add('pronto-agora');
+            if (pedidoDash) doDash();
+        }
+    }
+    atualizarBotaoDash();
     if (dashTimeLeft > 0) {
         dashTimeLeft -= dt * ts;   // na câmera lenta o dash dura mais e mantém o alcance
         isDashing = true;
@@ -3337,8 +3548,8 @@ function step() {
         const curva = Math.sin(Math.PI * Math.min(tDash, 1));
         effectiveSpeed += (BONUS_VEL_DASH + ((unlockedUpgrades.dash_pwr || 0) * 10)) * curva * MULT_CURVA_DASH;
         player.vy = 0; // congela o movimento vertical
-        player.scaleX = 1 + 0.6 * curva;
-        player.scaleY = 1 - 0.5 * curva;
+        player.scaleX = 1 + 0.3 * curva;    // esticada do dash (moderada: o rig inteiro é escalado)
+        player.scaleY = 1 - 0.22 * curva; player.sqV = 0;
         if (!usaPersonagemNovo(player)) emitirParticula({ x: player.x, y: player.y + player.h / 2 + (Math.random() * 20 - 10), vx: -10, vy: (Math.random() - 0.5) * 2, life: 1, color: '#00ffff', size: 6 });
     } else {
         isDashing = false;
@@ -3408,7 +3619,7 @@ function step() {
                 aoPousar(p.y, wasGrounded);
                 if (p.quebradica) {
                     // nuvem de chuva pingando enquanto alguém está em cima
-                    if (frames % 5 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + ESPESSURA_NUVEM - 6, vx: 0, vy: 2, gravidade: 0.25, life: 0.8, size: 2, color: PALETA.gota });
+                    if (frames % 5 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + ESPESSURA_NUVEM - 6, vx: 0, vy: 2, gravidade: 0.25, life: 0.8, size: 2, noMundo: true, color: PALETA.gota });
                     p.tempoPisado += ts; // conta em tempo de jogo (igual na câmera lenta)
                     // aviso: a nuvem começa a soltar fiapos antes de cair
                     if (p.tempoPisado > 15 && frames % 4 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + 10, vx: (Math.random() - 0.5) * 2, vy: 1.5, gravidade: 0.1, life: 0.6, size: 6, forma: 'poeira', noMundo: true, color: PALETA.nuvemChuva });
@@ -3494,7 +3705,7 @@ function step() {
             // "+N" do tamanho da raridade: comuns pequenos, lendárias enormes
             const escala = starVal >= 1000 ? 1.9 : starVal >= 250 ? 1.4 : starVal >= 100 ? 1.15 : 0.8;
             floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal.toLocaleString()}`, life: 1.0, color: burstColor, escala });
-            sleepFrames = 2; // micro hit-pause
+            if (starVal >= 250) sleepFrames = 2; // micro hit-pause só nas raras (comuns em sequência travavam o jogo)
 
             if (starVal >= 500) {
                 showToast(`${st.name}: +${starVal.toLocaleString()} ⭐`);
@@ -3585,7 +3796,8 @@ let aneis = [];
 function atualizarAneis() {
     let j = 0;
     for (const a of aneis) { a.t++; if (a.t <= 12) aneis[j++] = a; }
-    aneis.length = Math.min(j, 12);
+    aneis.length = j;
+    if (aneis.length > 12) aneis.splice(0, aneis.length - 12);   // descarta os mais ANTIGOS
 }
 // Linhas de vento: aparecem quando o jogo fica rápido e com força total no dash/foguete
 function desenharLinhasVelocidade(ctx) {
@@ -3698,21 +3910,17 @@ function aoPousar(topoY, estavaNoChao) {
         semInterpolar('runPhase'); // a passada recomeça sem "varrer" um ciclo inteiro num quadro
         player.mistura = Math.min(player.mistura, 0.3);   // a pose de pouso aparece já no impacto
         if (player.spin < 0) player.giroRapido = true;
-        if (vyImpacto > 8 || slamValido) {
-            player.scaleX = 1.6;
-            player.scaleY = 0.4;
-            for (let i = 0; i < (slamValido ? 12 : 6); i++) emitirParticula({ x: player.x + player.w / 2, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 10), vy: -Math.random() * (slamValido ? 4 : 2), life: 0.9, size: slamValido ? 10 : 7, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
-        } else {
-            // Pouso leve: squash suave + um pouco de poeira
-            player.scaleX = 1.3;
-            player.scaleY = 0.7;
-            for (let i = 0; i < 3; i++) emitirParticula({ x: player.x + player.w / 2 + (i - 1) * 10, y: topoY, vx: (i - 1) * 2, vy: -0.6, life: 0.6, size: 5, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
-        }
+        // squash proporcional à força do pouso (antes todo pouso acima de 8 parecia um slam)
+        const kPouso = slamValido ? 1 : Math.min(1, Math.max(0, (vyImpacto - 4) / 14));
+        player.scaleY = 0.88 - 0.38 * kPouso; player.scaleX = 1 / Math.sqrt(player.scaleY); player.sqV = 0;
+        const nPoeira = slamValido ? 12 : Math.round(3 + 4 * kPouso);
+        for (let i = 0; i < nPoeira; i++) emitirParticula({ x: player.x + player.w / 2 + (Math.random() - 0.5) * 20, y: topoY, vx: (Math.random() - 0.5) * (slamValido ? 16 : 4 + 6 * kPouso), vy: -Math.random() * (slamValido ? 4 : 0.6 + 1.4 * kPouso), life: 0.6 + 0.3 * kPouso, size: slamValido ? 10 : 5 + 2 * kPouso, forma: 'poeira', noMundo: true, color: PALETA.nuvemSombra });
+        if (!slamValido) playSound('land', kPouso);
         if (slamValido) {
             screenShake = 20; // impacto brutal
             aneis.push({ x: player.x + player.w / 2, y: topoY, cor: '#FFFFFF', t: 0, raio: 70 });   // onda de choque
             aneis.push({ x: player.x + player.w / 2, y: topoY, cor: PALETA.destaque, t: -3, raio: 45 });
-            playSound('hit');
+            playSound('slam');
             let slamBonus = (unlockedUpgrades.slam_score || 0) * 50;
             if (slamBonus > 0) score += slamBonus;
             checkMission('slams', 1);
@@ -3933,6 +4141,7 @@ function passoMorte() {
         player.y += player.vy;
         player.spin -= 0.25;
         player.mistura += (1 - player.mistura) * 0.3;   // patas abrem (pose de susto)
+        player.scaleY += (1 - player.scaleY) * 0.3; player.scaleX += (1 - player.scaleX) * 0.3;   // não morre achatado
         atualizarParticulas(0);
     }
     if (passosMorte <= 0) mostrarGameOver();
@@ -3960,6 +4169,11 @@ function mostrarGameOver() {
     hud.classList.add('hidden');
     mobileControls.style.display = 'none';
     finalScore.innerText = Math.floor(score);
+    // Gorjeta Inicial só vale se a partida chegou à fase 2 (morrer de propósito no começo não rende)
+    if (gorjetaInicial > 0 && currentPhase < 1) {
+        starsCollected = Math.max(0, starsCollected - gorjetaInicial);
+        showToast('🎁 A Gorjeta Inicial vale a partir da fase 2');
+    }
     const ganho = Math.floor(starsCollected * CONVERSAO_ESTRELAS);
     contarAte(finalStars, ganho, (n) => `+${n.toLocaleString()} 🌟`);
     document.getElementById('final-phase').innerText = currentPhase + 1;
@@ -4820,6 +5034,7 @@ btnChars.onclick = () => {
 function voltarDaLoja() {
     charMenu.classList.add('hidden');
     mainMenu.classList.remove('hidden');
+    iniciarLoopMenu();   // o fundo do menu fica parado enquanto a loja está aberta
 }
 btnBack.onclick = voltarDaLoja;   // botão fixo no topo da loja
 document.getElementById('btn-back-fim').onclick = voltarDaLoja;   // e o do final, para quem rolou até lá
@@ -4852,27 +5067,33 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') { e.preventDefault(); btnStart.click(); }
 });
 
-// Fundo animado do menu: o mesmo cenário da Fase 1 passando devagar
-let rafMenu = null, distanciaMenu = 0;
-function loopMenu() {
-    if (state !== 'menu') { rafMenu = null; return; }
-    frames++;
-    distanciaMenu += 1.2;
+// Fundo animado do menu: o mesmo cenário da Fase 1 passando devagar.
+// Passo fixo de 60 Hz (mesma velocidade em telas de 60 ou 144 Hz) e parado quando a loja/placar cobre o menu.
+let rafMenu = null, distanciaMenu = 0, ultimoMenu = 0, acumMenu = 0;
+function loopMenu(agora) {
+    if (state !== 'menu' || mainMenu.classList.contains('hidden')) {
+        rafMenu = null;
+        ctx.clearRect(0, 0, cw, ch);   // sem personagem por trás da loja/placar
+        return;
+    }
+    if (!ultimoMenu) ultimoMenu = agora;
+    acumMenu += Math.min(100, agora - ultimoMenu);
+    ultimoMenu = agora;
+    while (acumMenu >= PASSO_FISICA * 1000) {
+        acumMenu -= PASSO_FISICA * 1000;
+        frames++;
+        distanciaMenu += 1.2;
+        passoAtorMenu();
+    }
     desenharFundo(0, distanciaMenu, 0, 0);
     desenharAtorMenu();
     rafMenu = requestAnimationFrame(loopMenu);
 }
 
 // Personagem escolhido correndo numa nuvem ao lado do painel do menu (pula de vez em quando)
-let atorMenu = null;
-function desenharAtorMenu() {
-    ctx.clearRect(0, 0, cw, ch);
-    const painel = mainMenu.classList.contains('hidden') ? null : mainMenu.getBoundingClientRect();
-    const caixa = canvas.getBoundingClientRect();
-    if (!painel || !caixa.width) return;
-    // só aparece se couber à esquerda do painel (computador / celular deitado)
-    const livre = (painel.left - caixa.left) * (cw / caixa.width);
-    if (livre < 150) return;
+let atorMenu = null, livreMenu = null;   // livreMenu: espaço à esquerda do painel (medido só quando a tela muda)
+window.addEventListener('resize', () => { livreMenu = null; });
+function passoAtorMenu() {
     const char = characters[selectedChar] || characters[0];
     if (!atorMenu || atorMenu.char !== char) {
         atorMenu = {
@@ -4882,7 +5103,6 @@ function desenharAtorMenu() {
         };
     }
     const a = atorMenu;
-    a.visual = visualParaDesenho();
     // pulinho a cada ~4 s
     if (a.onGround && frames % 240 === 0) { a.vy = -8; a.onGround = false; }
     if (!a.onGround) {
@@ -4891,7 +5111,18 @@ function desenharAtorMenu() {
     }
     a.scaleX += (1 - a.scaleX) * 0.2; a.scaleY += (1 - a.scaleY) * 0.2;
     atualizarPose(a, 6);
-    const chao = ch * 0.72, xc = livre / 2;
+}
+function desenharAtorMenu() {
+    ctx.clearRect(0, 0, cw, ch);
+    if (livreMenu === null) {
+        const painel = mainMenu.getBoundingClientRect(), caixa = canvas.getBoundingClientRect();
+        livreMenu = caixa.width ? (painel.left - caixa.left) * (cw / caixa.width) : 0;
+    }
+    // só aparece se couber à esquerda do painel (computador / celular deitado)
+    if (livreMenu < 150 || !atorMenu) return;
+    const a = atorMenu;
+    a.visual = visualParaDesenho();
+    const chao = ch * 0.72, xc = livreMenu / 2;
     const nuvem = spriteNuvem(160, 'normal', FASES_VISUAL[0]), s = canvas.width / cw;
     ctx.drawImage(nuvem, xc - 80 - MARGEM_NUVEM, chao - MARGEM_NUVEM, nuvem.width / s, nuvem.height / s);
     a.x = xc - a.w / 2; a.y = chao - a.h - a.alt;
@@ -4901,7 +5132,10 @@ function desenharAtorMenu() {
     desenharUnicornio(ctx, a.x, a.y, a, frames / 60, 1.3);
 }
 function iniciarLoopMenu() {
-    if (rafMenu === null) rafMenu = requestAnimationFrame(loopMenu);
+    // ao voltar ao menu, os poderes da última partida não valem mais (ex.: o ator não fica na pose de voo)
+    isFlying = false;
+    livreMenu = null;
+    if (rafMenu === null) { ultimoMenu = 0; acumMenu = 0; rafMenu = requestAnimationFrame(loopMenu); }
 }
 iniciarLoopMenu();
 

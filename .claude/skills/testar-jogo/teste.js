@@ -163,10 +163,15 @@ async function rodar() {
         passo();
         ok(player.vy <= VEL_MAX_QUEDA + 0.001, `queda limitada: vy ${player.vy.toFixed(1)}`);
         // pulo do buffer sem botão segurado sai baixo
-        puloSegurado = false; isPaused = false; player.jumps = 0; jump(); isPaused = true;
-        ok(Math.abs(player.vy - player.jumpPower * CORTE_PULO) < 0.01, `pulo sem botão segurado é baixo: vy ${player.vy.toFixed(1)}`);
-        puloSegurado = true; isPaused = false; player.jumps = 0; jump(); isPaused = true; puloSegurado = false;
+        // (com pulo mínimo: o corte só acontece depois de PASSOS_PULO_MIN passos)
+        player.y = ch * 0.5; puloSegurado = false; isPaused = false; player.jumps = 0; jump(); isPaused = true;
+        const vyInicioCurto = player.vy;
+        passo(PASSOS_PULO_MIN); const vyCurto = player.vy;
+        player.y = ch * 0.5; puloSegurado = true; isPaused = false; player.jumps = 0; jump(); isPaused = true;
         ok(Math.abs(player.vy - player.jumpPower) < 0.01, `pulo com botão segurado é alto: vy ${player.vy.toFixed(1)}`);
+        passo(PASSOS_PULO_MIN); const vyLongo = player.vy; puloSegurado = false;
+        ok(Math.abs(vyInicioCurto - player.jumpPower) < 0.01, `toque rápido começa com o pulo inteiro (pulo mínimo)`);
+        ok(vyCurto > vyLongo + 2, `toque rápido é cortado depois do pulo mínimo: ${vyCurto.toFixed(1)} vs ${vyLongo.toFixed(1)}`);
         // plataforma móvel descendo: jogador fica colado
         const pm = { x: distance + player.x - 50, y: ch * 0.5, baseY: ch * 0.5, w: 2000, h: ch, amp: 60, velOsc: 0.04, faseOsc: 0 };
         platforms.push(pm); obstaculos = [];
@@ -192,7 +197,8 @@ async function rodar() {
         document.body.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, bubbles: true, button: 0, pointerType: 'touch' }));
         const vyPt = player.vy;
         document.body.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, bubbles: true, pointerType: 'touch' }));
-        ok(vyPt < -10 && player.vy > vyPt, `toque pula (${vyPt.toFixed(1)}) e soltar corta (${player.vy.toFixed(1)})`);
+        passo(PASSOS_PULO_MIN);
+        ok(vyPt < -10 && !player.podeCortarPulo, `toque pula (${vyPt.toFixed(1)}) e soltar corta depois do pulo mínimo (${player.vy.toFixed(1)})`);
         isPaused = true;
 
         // ── FASE A (2ª rodada) ──
@@ -258,6 +264,31 @@ async function rodar() {
             unlockedChars.push(id); selectedChar = id;
             btnStart.click(); await espera(250);
         }
+
+        // missões do dia: 3 diferentes, completar paga com o bônus de sequência e as 3 abrem o baú
+        ok(missoesDia && missoesDia.missoes.length === 3 && new Set(missoesDia.missoes.map(m => m.type)).size === 3,
+            `3 missões do dia diferentes (${missoesDia.missoes.map(m => m.type).join(',')})`);
+        ok(document.querySelectorAll('#missions-lista .missao-linha').length === 3, 'painel mostra as 3 missões');
+        globalStars = 0;
+        const multAtual = multSequencia();
+        const somaPremios = missoesDia.missoes.reduce((s, m) => s + Math.round(m.reward * multAtual), 0) + Math.round(PREMIO_BAU_DIARIO * multAtual);
+        missoesDia.missoes.forEach(m => { m.feita = false; m.current = 0; }); missoesDia.bau = false;
+        missoesDia.missoes.forEach(m => checkMission(m.type, m.target));
+        ok(missoesDia.bau && globalStars === somaPremios, `3 missões + baú pagam ${somaPremios} (carteira ${globalStars})`);
+        checkMission(missoesDia.missoes[0].type, 99999);
+        ok(globalStars === somaPremios, 'missão feita não paga de novo');
+
+        // save corrompido não derruba o jogo
+        localStorage.setItem('uniparkourTesteRuim', '{x');
+        ok(JSON.stringify(lerJSON('uniparkourTesteRuim', [0], Array.isArray)) === '[0]' && lerJSON('uniparkourTesteRuim2', 5) === 5,
+            'lerJSON devolve o padrão com save corrompido ou ausente');
+        localStorage.setItem('uniparkourTesteRuim', '5');
+        ok(JSON.stringify(lerJSON('uniparkourTesteRuim', [0], Array.isArray)) === '[0]', 'lerJSON recusa formato errado');
+        localStorage.removeItem('uniparkourTesteRuim');
+
+        // power-ups: o sorteio com raridade só devolve tipos que existem
+        const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
+        ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);
     } catch (e) {
         log.push('EXCEÇÃO ' + e.message + ' ' + e.stack);
     }

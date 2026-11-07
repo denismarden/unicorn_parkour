@@ -502,10 +502,12 @@ const CAUDA_BASE = {
 
 // Mistura os ângulos dos 3 estados conforme o quanto está no ar (mistura) e a velocidade vertical
 function angulosEstado(tabela, p, i) {
-    const s = Math.max(-1, Math.min(1, -p.vy / 8));          // +1 subindo forte, -1 caindo forte
+    // (usa os valores com atraso, se houver: crina e cauda acompanham o corpo um pouco depois)
+    const vy = p.vyCabelo === undefined ? p.vy : p.vyCabelo, mis = p.misCabelo === undefined ? p.mistura : p.misCabelo;
+    const s = Math.max(-1, Math.min(1, -vy / 8));            // +1 subindo forte, -1 caindo forte
     const ar = s >= 0 ? tabela.correndo[i] + (tabela.subindo[i] - tabela.correndo[i]) * s
         : tabela.correndo[i] + (tabela.caindo[i] - tabela.correndo[i]) * -s;
-    return tabela.correndo[i] + (ar - tabela.correndo[i]) * p.mistura;
+    return tabela.correndo[i] + (ar - tabela.correndo[i]) * mis;
 }
 
 // Fase da ondulação acumulada com o tempo: a frequência muda com a velocidade sem dar "pulos"
@@ -702,7 +704,8 @@ function calcularPatas(p, tempo, kPouso, esp = ESPECIES.unicornio) {
         let chao = amostrarKF(dianteira ? KF_DIANTEIRA : KF_TRASEIRA, u);
         // pouso: joelhos dobram (recuperação)
         if (kPouso > 0) chao = [chao[0] + (dianteira ? -6 : 8) * kPouso, chao[1] + (dianteira ? 18 : -14) * kPouso];
-        let ar = poseArPata(p, dianteira, tempo);
+        // pose do ar suavizada no passo de física (atualizarPose); morte e retratos usam a pose direta
+        let ar = (p.arSuave && !p.assustado) ? p.arSuave[dianteira ? 'd' : 't'].slice() : poseArPata(p, dianteira, tempo);
         if (nome[1] === 'b') ar = [ar[0] + 6, ar[1] + 6];   // pata do fundo levemente defasada
         res[nome] = _lerp2(chao, ar, p.mistura);
     }
@@ -1018,7 +1021,8 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const dashando = typeof isDashing !== 'undefined' && isDashing;
     const humor = dashando ? 'determinado' : kPouso > 0.3 ? 'feliz' : sVy > 0.3 ? 'subindo' : sVy < -0.4 ? 'caindo' : 'correndo';
 
-    const vel = typeof gameSpeed === 'number' ? gameSpeed : 5;
+    // velocidade REAL da animação (inclui o dash): a crina reage ao dash
+    const vel = typeof p.velAnim === 'number' ? p.velAnim : (typeof gameSpeed === 'number' ? gameSpeed : 5);
     const ondaCrina = atualizarOnda(p, tempo, vel);
     const idAcc = p.char.id;
     const lwMecha = lw * 0.6;   // linhas internas mais finas que o contorno externo

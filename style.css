@@ -202,7 +202,7 @@ canvas {
     background: rgba(255, 255, 255, 0.1);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(5px);
+    /* (sem desfoque: o botão já fica sobre o painel) */
 }
 
 .btn.secondary:hover {
@@ -213,7 +213,7 @@ canvas {
     background: rgba(255, 0, 50, 0.2);
     color: #ff88aa;
     border: 1px solid rgba(255, 0, 50, 0.5);
-    backdrop-filter: blur(5px);
+    /* (sem desfoque: o botão já fica sobre o painel) */
 }
 
 .btn.danger:hover {
@@ -250,8 +250,7 @@ canvas {
 
 /* HUD: pílulas de "vidro" com texto creme contornado (combina com a noite mágica) */
 .score-display, .stars-display, .speed-display, .fase-display {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(8px);
+    background: rgba(40, 24, 70, 0.72);   /* vidro escuro sólido: sem desfoque, que pesava a cada quadro */
     padding: 10px 22px;
     border-radius: 30px;
     font-size: 1.5rem;
@@ -275,8 +274,7 @@ canvas {
 
 /* Power-ups ativos: o mesmo vidro do placar (sem brilho branco nem pulsar constante) */
 .powerup-display {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(8px);
+    background: rgba(40, 24, 70, 0.72);
     padding: 10px 20px;
     border-radius: 30px;
     font-size: 1.15rem;
@@ -633,3 +631,24 @@ canvas.retrato { position: static; width: 140px; height: 104px; display: block; 
 }
 .carteira-final { font-size: 0.9rem; opacity: 0.8; margin-top: -6px; }
 @media (prefers-reduced-motion: reduce) { .ganho-estrelas.ganho-pop { animation: none; } }
+
+/* Celular: painéis sem desfoque de fundo (pesado para a GPU com o cenário animado por trás) */
+@media (pointer: coarse) {
+    .ui-panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(30, 20, 45, 0.9); }
+}
+
+/* Botão de DASH em recarga: apagado, com um "relógio" que se enche até ficar pronto */
+#mobile-dash.recarregando {
+    background: conic-gradient(rgba(0, 200, 255, 0.55) calc(var(--pronto, 0) * 1turn), rgba(20, 10, 40, 0.55) 0) !important;
+    opacity: 0.6;
+}
+#mobile-dash.pronto-agora { animation: dashPronto 0.3s ease-out; }
+@keyframes dashPronto { 50% { transform: scale(1.12); } }
+
+/* Missões do dia: 3 linhas compactas + baú e sequência */
+.missao-lista { display: flex; flex-direction: column; gap: 8px; }
+.missao-linha .missao-desc { font-size: 0.85rem; text-align: left; }
+.missao-linha .missao-trilho { height: 8px; margin-top: 4px; }
+.missao-linha .missao-rodape { margin-top: 2px; font-size: 0.75rem; }
+.missao-linha.feita { opacity: 0.6; }
+.missao-extra { margin-top: 8px; font-size: 0.8rem; text-align: center; color: #FFE08A; }
