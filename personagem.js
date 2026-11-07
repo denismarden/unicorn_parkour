@@ -798,8 +798,24 @@ const ACESS = {
             ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.25, 0, Math.PI * 2); ctx.stroke();
         }
     },
+    // Fantasma: fiapos de névoa saindo da barriga e da cauda, ondulando
+    nevoa: (ctx, pal, lw, onda, tempo) => {
+        const a0 = ctx.globalAlpha;
+        // fiapos mais fortes atrás (cobrem as patas de trás, como um "rabo" de fantasma) e mais fracos na frente
+        for (let i = 0; i < 4; i++) {
+            const x = -17 + i * 6.5, ond = Math.sin(tempo * 3 + i * 1.4) * 1.8;
+            ctx.globalAlpha = a0 * (0.85 - i * 0.17);
+            ctx.fillStyle = '#FBF8FF';
+            ctx.beginPath();
+            ctx.moveTo(x - 5, -1);
+            ctx.quadraticCurveTo(x - 4 + ond, 10, x - 9 + ond * 2, 16);
+            ctx.quadraticCurveTo(x + ond, 12, x + 5, -1);
+            ctx.closePath(); ctx.fill();
+        }
+        ctx.globalAlpha = a0;
+    },
     // ── cabeça ──
-    coroa: (ctx, pal, lw) => {
+    coroa:(ctx, pal, lw) => {
         ctx.translate(-0.5, -10.4); ctx.rotate(-0.25);
         const c = new Path2D();
         c.moveTo(-5, 0); c.lineTo(-5, -4); c.lineTo(-2.5, -1.8); c.lineTo(0, -5.6); c.lineTo(2.5, -1.8); c.lineTo(5, -4); c.lineTo(5, 0); c.closePath();
@@ -826,10 +842,13 @@ const ACESS = {
         ctx.beginPath(); ctx.moveTo(-6.5, -7.2); ctx.quadraticCurveTo(3, -11, 11.5, -8.2); ctx.stroke();
     },
     chifrinhos: (ctx, pal, lw) => {
-        for (const [x, y, r] of [[-1.5, -10, -0.35], [9, -8.6, 0.45]]) {
+        // chifres de oni: grandes, curvos e cor de osso (contrastam com o corpo vermelho)
+        for (const [x, y, r] of [[-2.5, -9.5, -0.5], [8.5, -8.8, 0.35]]) {
             ctx.save(); ctx.translate(x, y); ctx.rotate(r);
-            const c = new Path2D(); c.moveTo(-1.7, 0.5); c.quadraticCurveTo(-0.5, -3, 0.4, -5.2); c.lineTo(1.7, 0.5); c.closePath();
-            _contornar(ctx, c, '#FF5252', pal.contorno, lw * 1.1);
+            const c = new Path2D(); c.moveTo(-2.6, 0.8); c.quadraticCurveTo(-2.2, -4.5, 1.6, -8.5); c.quadraticCurveTo(0.6, -3.5, 2.6, 0.8); c.closePath();
+            _contornar(ctx, c, '#FFE9B0', pal.contorno, lw * 1.1);
+            ctx.fillStyle = '#E0B060';   // anéis do chifre
+            ctx.fillRect(-1.8, -2.2, 3.6, 0.9); ctx.fillRect(-1.2, -4.6, 2.6, 0.8);
             ctx.restore();
         }
     },
@@ -911,12 +930,13 @@ const ACESSORIOS = {
     5: { cabeca: ACESS.folhas },                                 // Esmeralda: coroa de folhas
     6: { corpo: ACESS.constelacao },                             // Cósmico: constelação
     7: { cabeca: ACESS.oculos },                                 // Neon: óculos escuros
+    8: { depois: ACESS.nevoa },                                  // Fantasma: névoa ondulando por cima das patas de trás
     9: { cabeca: ACESS.antena('#FF3B3B') },                      // Ciborgue: antena
     10: { depois: ACESS.bolhas },                                // Aqua: bolhas
     11: { tras: ACESS.capa('#C62828', '#FFD54A'), cabeca: ACESS.elmo },        // Guerreiro
     12: { cabeca: ACESS.aureola, asinhas: true },                // Anjo
     13: { cabeca: ACESS.chifrinhos },                            // Oni
-    14: { corpo: ACESS.manchas('#B7FF6B') },                     // Tóxico
+    14: { corpo: ACESS.manchas('#B7FF3B') },                     // Tóxico: roxo com manchas verde-limão
     15: { cabeca: ACESS.faixaNinja },                            // Ninja
     16: { cabeca: ACESS.antena('#00E5FF'), corpo: ACESS.painel }, // Robô
     17: { tras: ACESS.cristais },                                // Cristal
@@ -1161,11 +1181,29 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const mat = materialChifre(vis.chifre, pal);   // material escolhido na loja (dourado = padrão)
     if (esp.chifre === 'unicornio') {
         // chifre espiral (sem shadowBlur): base, face de sombra, faixas da espiral, brilho
+        if (mat.halo) {
+            // neon: halo aceso em volta do chifre
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            ctx.strokeStyle = 'rgba(255,79,216,0.45)'; ctx.lineWidth = lwCab * 4.5; ctx.stroke(FORMAS.chifre);
+            ctx.restore();
+        }
         ctx.strokeStyle = mat.contorno; ctx.lineWidth = lwCab * 1.5; ctx.stroke(FORMAS.chifre);
         ctx.fillStyle = mat.base; ctx.fill(FORMAS.chifre);
         ctx.save();
         ctx.clip(FORMAS.chifre);
-        if (mat.faixas) {
+        if (mat.faceta) {
+            // cristal: metade clara e metade escura, separadas por uma aresta (parece lapidado)
+            ctx.fillStyle = mat.sombra;
+            ctx.beginPath(); ctx.moveTo(8.2, -24); ctx.lineTo(14, -9); ctx.lineTo(6.5, -9); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 0.8;
+            ctx.beginPath(); ctx.moveTo(8.2, -24); ctx.lineTo(6.5, -9); ctx.moveTo(1, -12); ctx.lineTo(13, -15); ctx.stroke();
+        } else if (mat.espiralGrossa) {
+            // chocolate: espiral larga e escura (sorvete de casquinha)
+            ctx.strokeStyle = mat.sombra; ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            for (let k = 0; k < 4; k++) { const yy = -11.5 - k * 3.2; ctx.moveTo(0, yy + 2); ctx.lineTo(12, yy - 1.5); }
+            ctx.stroke();
+        } else if (mat.faixas) {
             // arco-íris: faixas diagonais coloridas em espiral
             ctx.lineWidth = 2.4;
             mat.faixas.forEach((cor, k) => { ctx.strokeStyle = cor; ctx.beginPath(); const yy = -9 - k * 2.4; ctx.moveTo(0, yy + 2); ctx.lineTo(12, yy - 1.5); ctx.stroke(); });
@@ -1190,6 +1228,12 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
         ctx.strokeStyle = mat.brilho; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(2.8, -11.5); ctx.lineTo(7.6, -21.8); ctx.stroke();
         ctx.restore();
+        if (mat.estrelaPonta) {
+            // estelar: estrela de 4 pontas na ponta do chifre
+            ctx.save(); ctx.translate(8.2, -23.5); ctx.rotate(Math.sin(tempo * 2) * 0.3);
+            _contornar(ctx, _estrela(0, 0, 3.4, 4), '#FFF4C2', '#6B4FC8', lwCab * 0.6);
+            ctx.restore();
+        }
     } else if (esp.chifre === 'dragao') {
         // dois chifres curtos e grossos, curvos para trás
         for (const [dx, k] of [[4.5, 0.85], [0, 1]]) {
@@ -1616,10 +1660,18 @@ function desenharPelagem(ctx, tipo, forma, caixa, tempo, semente = 1) {
         ctx.fillStyle = g; ctx.fillRect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
         ctx.fillStyle = 'rgba(255,150,220,0.28)';
         ctx.beginPath(); ctx.ellipse((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) * 0.3, (y1 - y0) * 0.25, -0.3, 0, Math.PI * 2); ctx.fill();
-        for (let i = 0; i < 26; i++) {
+        for (let i = 0; i < 34; i++) {
             const a = 0.5 + 0.5 * Math.sin(tempo * 3 + i * 1.7);
-            ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.65 * a})`;
-            ctx.fillRect(x0 + rnd(i) * (x1 - x0), y0 + rnd(i + 40) * (y1 - y0), 0.9, 0.9);
+            ctx.fillStyle = `rgba(255,255,255,${0.45 + 0.55 * a})`;
+            const t = i % 5 === 0 ? 1.6 : 1.1;   // algumas estrelas maiores: aparecem no retrato da loja
+            ctx.fillRect(x0 + rnd(i) * (x1 - x0), y0 + rnd(i + 40) * (y1 - y0), t, t);
+        }
+        // 3 estrelinhas de 4 pontas
+        ctx.fillStyle = '#FFFFFF';
+        for (let i = 0; i < 3; i++) {
+            const cx = x0 + (0.2 + 0.3 * i) * (x1 - x0), cy = y0 + rnd(i + 90) * (y1 - y0), r = 2.4;
+            ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + 0.6, cy - 0.6); ctx.lineTo(cx + r, cy); ctx.lineTo(cx + 0.6, cy + 0.6);
+            ctx.lineTo(cx, cy + r); ctx.lineTo(cx - 0.6, cy + 0.6); ctx.lineTo(cx - r, cy); ctx.lineTo(cx - 0.6, cy - 0.6); ctx.closePath(); ctx.fill();
         }
     } else if (tipo === 'arcoiris') {
         const cores = ['#FF5F7E', '#FFB347', '#FFE66D', '#7DDE92', '#6FC3FF', '#B387FF'];
@@ -1631,7 +1683,15 @@ function desenharPelagem(ctx, tipo, forma, caixa, tempo, semente = 1) {
             ctx.beginPath(); ctx.moveTo(x, y1 + 2); ctx.lineTo(x + larg, y1 + 2); ctx.lineTo(x + larg + 14, y0 - 2); ctx.lineTo(x + 14, y0 - 2); ctx.closePath(); ctx.fill();
         }
     } else if (tipo === 'cromado') {
-        ctx.fillStyle = 'rgba(200,210,235,0.5)'; ctx.fillRect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+        // metal prateado de verdade: degradê claro→azul-acinzentado + 2 reflexos diagonais fixos
+        const m = ctx.createLinearGradient(0, y0, 0, y1);
+        m.addColorStop(0, 'rgba(245,248,255,0.92)'); m.addColorStop(0.45, 'rgba(176,188,214,0.92)'); m.addColorStop(1, 'rgba(110,122,160,0.92)');
+        ctx.fillStyle = m; ctx.fillRect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        for (const [f, l] of [[0.25, 3.5], [0.38, 1.6]]) {
+            const x = x0 + f * (x1 - x0);
+            ctx.beginPath(); ctx.moveTo(x, y0 - 2); ctx.lineTo(x + l, y0 - 2); ctx.lineTo(x + l - 8, y1 + 2); ctx.lineTo(x - 8, y1 + 2); ctx.closePath(); ctx.fill();
+        }
         const varre = ((tempo * 0.6) % 1.6 - 0.3) * (x1 - x0) + x0;   // faixa de brilho passando
         const g = ctx.createLinearGradient(varre - 6, 0, varre + 6, 0);
         g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -1642,14 +1702,14 @@ function desenharPelagem(ctx, tipo, forma, caixa, tempo, semente = 1) {
 
 // ── Chifres: material (cores) + detalhe especial ──
 const MATERIAIS_CHIFRE = {
-    cristal: { base: '#EBDDFF', sombra: '#B79BEF', brilho: '#FFFFFF', contorno: '#4A2A8A', luz: '#D9C2FF' },   // lilás translúcido (o gelo é azul)
+    cristal: { base: '#EBDDFF', sombra: '#B79BEF', brilho: '#FFFFFF', contorno: '#4A2A8A', luz: '#D9C2FF', faceta: true },   // lilás translúcido (o gelo é azul)
     arcoiris: { base: '#FFFFFF', sombra: '#E6E0F5', brilho: '#FFFFFF', contorno: '#6B3FA0', luz: '#FF9CCB',
         faixas: ['#FF5F7E', '#FFB347', '#FFE66D', '#7DDE92', '#6FC3FF', '#B387FF'] },
     gelo: { base: '#E6F7FF', sombra: '#A9D8F5', brilho: '#FFFFFF', contorno: '#3A6EA5', luz: '#BFEFFF' },
-    chocolate: { base: '#8B5A2B', sombra: '#5E3A1A', brilho: '#C9925A', contorno: '#3B220E', luz: '#FFB347', granulado: true },
-    estelar: { base: '#2A1E66', sombra: '#160F40', brilho: '#B9A4FF', contorno: '#B9A4FF', luz: '#B9A4FF', estrelas: true },
+    chocolate: { base: '#8B5A2B', sombra: '#5E3A1A', brilho: '#C9925A', contorno: '#3B220E', luz: '#FFB347', granulado: true, espiralGrossa: true },
+    estelar: { base: '#2A1E66', sombra: '#160F40', brilho: '#B9A4FF', contorno: '#B9A4FF', luz: '#B9A4FF', estrelas: true, estrelaPonta: true },
     rosa: { base: '#FFD1E8', sombra: '#F49AC1', brilho: '#FFFFFF', contorno: '#9A3F6E', luz: '#FF9CCB' },
-    neon: { base: '#FF4FD8', sombra: '#B0109A', brilho: '#FFFFFF', contorno: '#4A0A45', luz: '#FF4FD8' }
+    neon: { base: '#FF4FD8', sombra: '#B0109A', brilho: '#FFFFFF', contorno: '#4A0A45', luz: '#FF4FD8', halo: true }
 };
 function materialChifre(tipo, pal) {
     return MATERIAIS_CHIFRE[tipo] || pal.chifre;
@@ -1755,7 +1815,7 @@ function desenharRastro(ctx, p, dist, vel, pal, tempo) {
     const pts = [{ x: raiz.x, y: raiz.y }];
     for (let i = 1; i < r.length; i++) pts.push({ x: r[i].x - dist, y: r[i].y });
     const n = pts.length, ponta = pts[n - 1];
-    const escala = p.w / 50;
+    const escala = (p.w / 50) * (p.escalaRastro || 1);   // escalaRastro: prévia maior na loja
     ctx.save();
     ctx.globalAlpha *= p.alfaFita;
     if (tipo === 'arcoiris') {
@@ -1791,7 +1851,8 @@ function desenharRastro(ctx, p, dist, vel, pal, tempo) {
         // figuras (corações, estrelas, notas...) deixadas para trás, encolhendo e sumindo
         const fig = RASTRO_FIGURAS[tipo] || RASTRO_FIGURAS.estrelas;
         for (let i = 1; i < n; i += 2) {
-            const k = 1 - i / (n - 1);
+            // na prévia da loja (escalaRastro) as figuras não somem: todas ficam visíveis
+            const k = p.escalaRastro ? Math.max(0.6, 1 - i / (n - 1)) : 1 - i / (n - 1);
             const tam = (8 + 10 * k) * escala;
             ctx.globalAlpha = p.alfaFita * Math.min(1, k * 1.3);
             const y = pts[i].y + Math.sin(tempo * 6 + i) * 3 * escala;

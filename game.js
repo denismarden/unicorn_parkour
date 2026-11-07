@@ -1032,16 +1032,16 @@ const characters = [
     { id: 5, cost: 0, name: "Esmeralda", desc: "Pula 3 vezes mais alto.", jumpPowerMult: 1.732, gravityMult: 1.0, body: "#a0ffc0", mane: ["#2e8b57", "#00ffaa"], particle: "#00fa9a" },
     { id: 6, cost: 0, name: "Cósmico", desc: "Quad-jump longo leve.", maxJumps: 4, jumpPowerMult: 0.85, body: "#191970", mane: ["#ffffff", "#dda0dd"], particle: "#dda0dd" },
     { id: 7, cost: 0, name: "Neon", desc: "Ganha +20% de pontos.", pointsMult: 1.2, body: "#ff00ff", mane: ["#00ffff", "#ffffff"], particle: "#ff00ff" },
-    { id: 8, cost: 0, name: "Fantasma", desc: "Duração estendida magias", powerupDurMult: 1.5, body: "rgba(255,255,255,0.7)", mane: ["rgba(255,255,255,0.5)", "rgba(100,200,255,0.5)"], particle: "rgba(255,255,255,0.4)" },
+    { id: 8, cost: 0, name: "Fantasma", desc: "Duração estendida magias", powerupDurMult: 1.5, body: "rgba(232,224,255,0.72)", mane: ["rgba(255,255,255,0.6)", "rgba(170,150,240,0.6)"], particle: "rgba(220,210,255,0.5)" },
     { id: 9, cost: 0, name: "Ciborgue", desc: "Resistência estrutural", startShield: true, body: "#b0b0b0", mane: ["#ff0000", "#555555"], particle: "#ff0000" },
     { id: 10, cost: 0, name: "Aqua", desc: "Desliza e flutua 20%.", gravityMult: 0.8, body: "#44aaff", mane: ["#0055ff", "#002288"], particle: "#00aaff" },
-    { id: 11, cost: 0, name: "Guerreiro", desc: "Mestre em Combate.", body: "#880000", mane: ["#ff0000", "#550000"], particle: "#ff3333" },
+    { id: 11, cost: 0, name: "Guerreiro", desc: "Mestre em Combate.", body: "#C98A4B", mane: ["#7A3A14", "#4A2208"], particle: "#FFB347" },
     { id: 12, cost: 0, name: "Anjo", desc: "Pulo suave.", jumpPowerMult: 1.2, body: "#ffffee", mane: ["#ffffff", "#ffddaa"], particle: "#ffffff" },
     { id: 13, cost: 0, name: "Oni", desc: "Score 1.5x, cai rápido.", pointsMult: 1.5, gravityMult: 1.5, body: "#220000", mane: ["#ff0000", "#aa0000"], particle: "#ff0000" },
-    { id: 14, cost: 0, name: "Tóxico", desc: "Ímã natural extremo.", magnetic: 150, body: "#00ff00", mane: ["#005500", "#002200"], particle: "#00aa00" },
+    { id: 14, cost: 0, name: "Tóxico", desc: "Ímã natural extremo.", magnetic: 150, body: "#9A5BD8", mane: ["#B7FF3B", "#5FBF00"], particle: "#B7FF3B" },
     { id: 15, cost: 0, name: "Ninja", desc: "Pulo x5, pulos fracos.", maxJumps: 5, jumpPowerMult: 0.7, body: "#111111", mane: ["#333333", "#555555"], particle: "#555555" },
     { id: 16, cost: 0, name: "Robô", desc: "Pulo Foguete x2.", jumpPowerMult: 2.0, pointsMult: 0.8, body: "#88aaa0", mane: ["#555555", "#00ffff"], particle: "#00ffff" },
-    { id: 17, cost: 0, name: "Cristal", desc: "Estrelas raras x2.5.", spawnRateMult: 2.5, body: "#aaddff", mane: ["#ffffff", "#55aaff"], particle: "#aaddff" },
+    { id: 17, cost: 0, name: "Cristal", desc: "Estrelas raras x2.5.", spawnRateMult: 2.5, body: "#9EEBDD", mane: ["#FFFFFF", "#2FC7B5"], particle: "#9EEBDD" },
     { id: 18, cost: 0, name: "Bardo", desc: "Powerups x2 tempo.", powerupDurMult: 2.0, body: "#ff55aa", mane: ["#ff0055", "#ffaaaa"], particle: "#ff55aa" },
     { id: 19, cost: 0, name: "Rei", desc: "Maior chance e pontos.", pointsMult: 1.5, spawnRateMult: 1.5, maxJumps: 3, body: "#ffdd00", mane: ["#ffffff", "#ff8800"], particle: "#ffdd00" },
     { id: 20, cost: 0, name: "Dragão", desc: "Voa mais alto e veloz.", jumpPowerMult: 1.6, gravityMult: 0.7, maxJumps: 3, body: "#cc2200", mane: ["#ff6600", "#ffdd00"], particle: "#ff4400" },
@@ -1322,7 +1322,8 @@ function renderVisual() {
         retrato.className = 'retrato';
         const equipPrevia = { ...visualEquipado };
         if (abaVisual !== 'aura') equipPrevia[abaVisual] = item.id;
-        const extra = abaVisual === 'aura' ? { aura: AURA_EFEITO[item.id] || null } : abaVisual === 'rastro' ? { rastro: true } : {};
+        const extra = abaVisual === 'aura' ? { aura: AURA_EFEITO[item.id] || null } : abaVisual === 'rastro' ? { rastro: true }
+            : abaVisual === 'chifre' ? { foco: 'cabeca' } : {};   // chifres: close na cabeça (o material aparece)
         retratosPendentes.push([retrato, charPrevia, visualParaDesenho(equipPrevia), extra]);
         card.innerHTML = `<div class="char-name">${item.name}</div><div class="char-desc">${item.desc}</div>` +
             `<div style="font-weight:bold; white-space:nowrap; color:${tem ? '#9BE7FF' : '#FFE08A'}">${tem ? (equipado ? 'EQUIPADO' : 'USAR') : '🔒 ' + item.cost + ' ⭐'}</div>`;
@@ -1368,16 +1369,19 @@ function desenharRetrato(cv, char, visual, extra = {}) {
             g.restore();
         });
     }
-    // prévia do rastro: um caminho ondulado saindo da cauda para a esquerda
+    // prévia do rastro: o personagem vai para a direita do card e a trilha (maior) ondula para a esquerda
     if (extra.rastro) {
+        p.x = 70; p.escalaRastro = 1.25;
         const raiz = pontoLocalNaTela(p, RAIZ_CAUDA[0], RAIZ_CAUDA[1], 1.3);
         p.rastro = [];
-        for (let i = 0; i < 14; i++) p.rastro.push({ x: raiz.x - i * 6, y: raiz.y + Math.sin(i * 0.6) * 5 + i * 0.6 });
+        for (let i = 0; i < 13; i++) p.rastro.push({ x: raiz.x - 12 - i * 5, y: raiz.y + 8 + Math.sin(i * 0.7) * 6 + i * 0.6 });
         p.alfaFita = 1; p.onGround = false;
         desenharRastro(g, p, 0, 8, paletaDe(char), 0.3);
         p.onGround = true;
     }
-    desenharUnicornio(g, 55, 58, p, 0.3, 1.3);   // enquadrado para a cabeça maior
+    // chifres: close na cabeça, para o material e o formato aparecerem
+    if (extra.foco === 'cabeca') { g.translate(79.5, 59); g.scale(1.55, 1.55); g.translate(-100, -30); }
+    desenharUnicornio(g, p.x, p.y, p, 0.3, 1.3);   // enquadrado para a cabeça maior
 }
 function desenharRetratosPendentes() {
     if (!retratosLiberados) return;
