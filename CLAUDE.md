@@ -41,6 +41,8 @@ Tema visual: "noite mágica" (céu roxo/azul escuro, aurora, estrelas) + platafo
 - **Power-ups**: catálogo em `POWERUP_TYPES` + `PESO_POWERUP` (raridade) + `ESTILOS_POWERUP` (bolha, nome) + `DURACAO_PODER`.
   Os antigos têm variáveis próprias (`isMagnetActive`...); os novos usam o sistema genérico `PODERES_NOVOS`/`poderes`/`ativo(id)`
   (pílula do HUD criada sozinha). Poder novo com duração: entrar em `PODERES_NOVOS` e tratar o efeito com `ativo(id)`.
+- **Música**: uma composição por fase + menu em `MUSICAS` (bpm, tom, escala, acordes, timbres, baixo, bateria, arpejo, pad);
+  `cancaoDe(id)` compõe a melodia com semente fixa e `agendarMusica` toca com o relógio do áudio (troca no início do compasso).
 - **Placar online**: Firebase REST (`URL_PLACAR`); o jogo só ADICIONA recordes (as regras proíbem apagar/alterar).
 
 ## Como rodar e testar

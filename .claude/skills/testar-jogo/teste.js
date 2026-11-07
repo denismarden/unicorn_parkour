@@ -325,6 +325,36 @@ async function rodar() {
         zerarPoderesNovos();
         magnetTimeLeft = 0; coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
         ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01, `duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
+        // música: cada fase (+ menu) tem composição completa, audível e diferente das outras
+        {
+            const ids = ['menu'].concat(PHASES.map((_, i) => i));
+            const problemas = [];
+            for (const id of ids) {
+                const c = cancaoDe(id), evs = c.eventos.flat();
+                const leads = evs.filter(e => e.inst === 'lead'), baixos = evs.filter(e => e.inst === 'baixo');
+                const compassosComMelodia = new Set(c.eventos.map((e, p) => e.some(x => x.inst === 'lead') ? Math.floor(p / 16) : -1)).size - 1;
+                if (compassosComMelodia < 8) problemas.push(`${id}: melodia em ${compassosComMelodia}/8 compassos`);
+                if (leads.some(e => e.f < 150 || e.f > 2100)) problemas.push(`${id}: melodia fora da faixa`);
+                if (!baixos.length || baixos.some(e => e.f < 25 || e.f > 330)) problemas.push(`${id}: baixo fora da faixa`);
+            }
+            ok(!problemas.length, `${ids.length} músicas completas (${problemas.join('; ') || 'ok'})`);
+            const assinatura = (id) => cancaoDe(id).eventos.slice(0, 64).map(e => e.filter(x => x.inst === 'lead').map(x => Math.round(x.f)).join('/')).join(',');
+            const unicas = new Set(ids.map(assinatura));
+            ok(unicas.size === ids.length, `cada fase tem melodia própria (${unicas.size} de ${ids.length} diferentes)`);
+            ok(new Set(ids.map(id => MUSICAS[id].bpm + MUSICAS[id].escala + MUSICAS[id].bateria)).size >= 20, 'fases com estilos variados (andamento, modo, bateria)');
+            // agenda 1 compasso de cada música num AudioContext de verdade (mudo): não pode dar erro
+            const errosAntesMusica = window.__erros.length;
+            let erroMusica = '';
+            try {
+                const ctxReal = audioCtx, ganhoReal = musicGain;
+                audioCtx = new AudioContext(); musicGain = audioCtx.createGain(); musicGain.gain.value = 0; musicGain.connect(audioCtx.destination); _ruido = null;
+                for (const id of ids) { const c = cancaoDe(id); for (let p = 0; p < 16; p++) for (const ev of c.eventos[p]) tocarNotaMusica(ev, audioCtx.currentTime + 0.05 + p * c.passoSeg, c.passoSeg, c.def); }
+                audioCtx.close(); audioCtx = ctxReal; musicGain = ganhoReal; _ruido = null;
+            } catch (e) { erroMusica = e.message; }
+            ok(!erroMusica && window.__erros.length === errosAntesMusica, `instrumentos tocam sem erro ${erroMusica}`);
+            state = 'playing'; currentPhase = 5;
+            ok(musicaDoMomento() === 5, 'durante a partida toca a música da fase atual');
+        }
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);

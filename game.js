@@ -764,7 +764,7 @@ btnMute.onclick = () => {
     localStorage.setItem('uniparkourMuted', isMuted);
     btnMute.innerText = isMuted ? '🔇' : '🔊';
     if (isMuted && musicGain) musicGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
-    else if (!isMuted && musicGain) musicGain.gain.setTargetAtTime(0.05, audioCtx.currentTime, 0.1);
+    else if (!isMuted && musicGain) musicGain.gain.setTargetAtTime(VOLUME_MUSICA, audioCtx.currentTime, 0.1);
 };
 btnMute.innerText = isMuted ? '🔇' : '🔊';
 
@@ -846,77 +846,224 @@ function playSound(type, forca = 1) {
     }
 }
 
-let musicInterval = null;
+// ─────────────────────────────────────────────────────────────────────────
+// MÚSICA — uma composição para cada fase (+ menu), gerada e sintetizada na hora (Web Audio, sem arquivos)
+// Cada fase tem estilo próprio (andamento, modo, acordes, timbres, baixo, bateria, arpejo) e uma melodia
+// composta a partir de uma semente fixa: a música de cada fase é sempre a mesma.
+// ─────────────────────────────────────────────────────────────────────────
+const VOLUME_MUSICA = 0.7;
+const ESCALAS = {
+    maior: [0, 2, 4, 5, 7, 9, 11], menor: [0, 2, 3, 5, 7, 8, 10], dorico: [0, 2, 3, 5, 7, 9, 10],
+    lidio: [0, 2, 4, 6, 7, 9, 11], mixolidio: [0, 2, 4, 5, 7, 9, 10], frigio: [0, 1, 3, 5, 7, 8, 10],
+    harmonica: [0, 2, 3, 5, 7, 8, 11]
+};
+// bpm, tom (nota MIDI da tônica), escala, acordes (graus 0–6 por compasso), lead (timbre), baixo, bateria, arpejo, pad
+const MUSICAS = {
+    menu: { bpm: 92, tom: 60, escala: 'maior', acordes: [0, 5, 3, 4], lead: 'sine', baixo: 'longo', bateria: 'nenhuma', arpejo: 'pingue', pad: true },
+    0: { bpm: 112, tom: 60, escala: 'maior', acordes: [0, 4, 5, 3], lead: 'triangle', baixo: 'pulso', bateria: 'leve', arpejo: 'sobe', pad: false },        // Pradaria Mágica
+    1: { bpm: 100, tom: 65, escala: 'lidio', acordes: [0, 1, 0, 1], lead: 'sine', baixo: 'longo', bateria: 'leve', arpejo: 'pingue', pad: true },          // Ilhas Flutuantes
+    2: { bpm: 150, tom: 64, escala: 'menor', acordes: [0, 5, 6, 4], lead: 'square', baixo: 'oitavas', bateria: 'rock', arpejo: 'desce', pad: false },     // Tempestade Elétrica
+    3: { bpm: 126, tom: 62, escala: 'frigio', acordes: [0, 1, 0, 6], lead: 'sawtooth', baixo: 'sincopado', bateria: 'tribal', arpejo: 'nenhum', pad: false }, // Cavernas de Lava
+    4: { bpm: 92, tom: 57, escala: 'menor', acordes: [0, 5, 2, 6], lead: 'sine', baixo: 'longo', bateria: 'leve', arpejo: 'pingue', pad: true },          // Tundra Glacial
+    5: { bpm: 108, tom: 55, escala: 'dorico', acordes: [0, 3, 0, 4], lead: 'triangle', baixo: 'pulso', bateria: 'eletronica', arpejo: 'sobe', pad: true }, // Órbita Cósmica
+    6: { bpm: 128, tom: 54, escala: 'menor', acordes: [0, 5, 2, 6], lead: 'sawtooth', baixo: 'oitavas', bateria: 'eletronica', arpejo: 'sobe', pad: false }, // Portal Neon
+    7: { bpm: 132, tom: 65, escala: 'maior', acordes: [0, 3, 4, 0], lead: 'square', baixo: 'andando', bateria: 'leve', arpejo: 'pingue', pad: false },     // Mundo Doce
+    8: { bpm: 84, tom: 60, escala: 'harmonica', acordes: [0, 3, 4, 0], lead: 'triangle', baixo: 'longo', bateria: 'marcha', arpejo: 'desce', pad: true },  // Dimensão Sombria
+    9: { bpm: 120, tom: 62, escala: 'maior', acordes: [0, 4, 5, 3], lead: 'triangle', baixo: 'pulso', bateria: 'rock', arpejo: 'sobe', pad: false },       // Fim do Arco-Íris
+    10: { bpm: 104, tom: 62, escala: 'dorico', acordes: [0, 3, 0, 6], lead: 'sine', baixo: 'andando', bateria: 'tribal', arpejo: 'pingue', pad: false },  // Floresta Encantada
+    11: { bpm: 76, tom: 58, escala: 'menor', acordes: [0, 5, 3, 4], lead: 'sine', baixo: 'longo', bateria: 'nenhuma', arpejo: 'sobe', pad: true },        // Abismo Oceânico
+    12: { bpm: 118, tom: 63, escala: 'mixolidio', acordes: [0, 6, 3, 0], lead: 'square', baixo: 'sincopado', bateria: 'marcha', arpejo: 'desce', pad: false }, // Ruínas Mecânicas
+    13: { bpm: 100, tom: 64, escala: 'harmonica', acordes: [0, 1, 0, 1], lead: 'sawtooth', baixo: 'pulso', bateria: 'tribal', arpejo: 'nenhum', pad: true }, // Deserto das Ilusões
+    14: { bpm: 140, tom: 57, escala: 'menor', acordes: [0, 0, 5, 6], lead: 'square', baixo: 'oitavas', bateria: 'eletronica', arpejo: 'sobe', pad: false }, // Matriz de Dados
+    15: { bpm: 116, tom: 56, escala: 'maior', acordes: [0, 5, 3, 4], lead: 'triangle', baixo: 'andando', bateria: 'rock', arpejo: 'sobe', pad: true },     // Metrópole Celeste
+    16: { bpm: 138, tom: 61, escala: 'frigio', acordes: [0, 1, 6, 0], lead: 'sawtooth', baixo: 'sincopado', bateria: 'rock', arpejo: 'nenhum', pad: false }, // Cratera Vulcânica
+    17: { bpm: 96, tom: 65, escala: 'harmonica', acordes: [0, 5, 3, 4], lead: 'sine', baixo: 'longo', bateria: 'leve', arpejo: 'desce', pad: true },      // Reino Místico
+    18: { bpm: 144, tom: 55, escala: 'mixolidio', acordes: [0, 6, 3, 0], lead: 'square', baixo: 'oitavas', bateria: 'rock', arpejo: 'nenhum', pad: false }, // Forja Solar
+    19: { bpm: 110, tom: 59, escala: 'lidio', acordes: [0, 1, 5, 4], lead: 'triangle', baixo: 'pulso', bateria: 'eletronica', arpejo: 'sobe', pad: true }, // Fronteira Galáctica
+    20: { bpm: 124, tom: 64, escala: 'menor', acordes: [0, 6, 5, 4], lead: 'sine', baixo: 'pulso', bateria: 'eletronica', arpejo: 'desce', pad: false },  // Espiral do Tempo
+    21: { bpm: 88, tom: 58, escala: 'frigio', acordes: [0, 1, 0, 1], lead: 'triangle', baixo: 'sincopado', bateria: 'marcha', arpejo: 'nenhum', pad: true }, // Covil Aracnídeo
+    22: { bpm: 108, tom: 64, escala: 'maior', acordes: [0, 3, 4, 5], lead: 'sine', baixo: 'pulso', bateria: 'leve', arpejo: 'pingue', pad: false },       // Caverna de Diamantes
+    23: { bpm: 130, tom: 56, escala: 'dorico', acordes: [0, 3, 0, 3], lead: 'sawtooth', baixo: 'sincopado', bateria: 'eletronica', arpejo: 'sobe', pad: false }, // Planalto Tóxico
+    24: { bpm: 156, tom: 62, escala: 'menor', acordes: [0, 5, 6, 4], lead: 'square', baixo: 'oitavas', bateria: 'rock', arpejo: 'desce', pad: false },    // Cidadela dos Trovões
+    25: { bpm: 80, tom: 61, escala: 'menor', acordes: [0, 5, 3, 6], lead: 'sine', baixo: 'longo', bateria: 'nenhuma', arpejo: 'pingue', pad: true },      // Face Oculta da Lua
+    26: { bpm: 150, tom: 65, escala: 'harmonica', acordes: [0, 1, 4, 0], lead: 'sawtooth', baixo: 'oitavas', bateria: 'eletronica', arpejo: 'sobe', pad: false }, // Singularidade Ativa
+    27: { bpm: 96, tom: 57, escala: 'lidio', acordes: [0, 1, 0, 4], lead: 'triangle', baixo: 'longo', bateria: 'leve', arpejo: 'sobe', pad: true },       // Nebulosa de Órion
+    28: { bpm: 120, tom: 63, escala: 'maior', acordes: [0, 3, 4, 0], lead: 'square', baixo: 'andando', bateria: 'marcha', arpejo: 'nenhum', pad: true },  // Trono dos Deuses
+    29: { bpm: 132, tom: 60, escala: 'menor', acordes: [0, 5, 2, 4], lead: 'sawtooth', baixo: 'oitavas', bateria: 'rock', arpejo: 'sobe', pad: true }     // O Fim de Tudo
+};
+const RITMOS_MELODIA = [   // posições (em semicolcheias, 0–15) onde a melodia toca, por compasso
+    [0, 3, 6, 8, 10, 12], [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 6, 8, 12, 14], [0, 3, 4, 7, 8, 11, 12, 14], [0, 6, 8, 10, 14], [0, 2, 3, 6, 8, 12]
+];
+const freqMidi = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+// Compõe a música (128 passos = 8 compassos) a partir da definição da fase
+const _cacheCancoes = new Map();
+function cancaoDe(id) {
+    if (_cacheCancoes.has(id)) return _cacheCancoes.get(id);
+    const d = MUSICAS[id] || MUSICAS.menu;
+    const esc = ESCALAS[d.escala];
+    const rnd = aleatorioSemente(7919 * (id === 'menu' ? 97 : id + 3));
+    // grau da escala (pode passar de 7) → MIDI
+    const nota = (grau, base) => base + esc[((grau % 7) + 7) % 7] + 12 * Math.floor(grau / 7);
+    const acordeDe = (g) => [g, g + 2, g + 4];
+    const eventos = Array.from({ length: 128 }, () => []);
+    const toca = (passo, ev) => eventos[passo].push(ev);
+    const ritmo = RITMOS_MELODIA[Math.floor(rnd() * RITMOS_MELODIA.length)];
+    const ritmoB = RITMOS_MELODIA[Math.floor(rnd() * RITMOS_MELODIA.length)];
+    const baseLead = d.tom > 62 ? d.tom - 12 : d.tom;   // tons altos: melodia uma oitava abaixo (não fica estridente)
+
+    // motivo de 1 compasso: notas do acorde nos tempos fortes, passos na escala entre eles
+    const motivo = (grauAcorde, rit) => {
+        const out = []; let g = grauAcorde + 7 + (rnd() < 0.5 ? 2 : 0);
+        for (const pos of rit) {
+            if (pos % 8 === 0) { const ac = acordeDe(grauAcorde + 7); g = ac[Math.floor(rnd() * 3)]; }
+            else g += [-2, -1, -1, 1, 1, 2][Math.floor(rnd() * 6)];
+            g = Math.max(grauAcorde + 3, Math.min(grauAcorde + 13, g));
+            out.push([pos, g]);
+        }
+        return out;
+    };
+    const m1 = motivo(d.acordes[0], ritmo), m3 = motivo(d.acordes[2], ritmoB);
+    for (let compasso = 0; compasso < 8; compasso++) {
+        const grauAc = d.acordes[compasso % 4], base = compasso * 16, fraseB = compasso >= 4;
+        // melodia: c0 motivo, c1 motivo levado ao acorde, c2 novo, c3 final na tônica; frase B uma terça acima
+        let notas;
+        if (compasso % 4 === 0) notas = m1;
+        else if (compasso % 4 === 1) notas = m1.map(([p, g]) => [p, g + (grauAc - d.acordes[0])]);
+        else if (compasso % 4 === 2) notas = m3;
+        else notas = [[0, 7 + (fraseB ? 0 : 2)], [4, 7 + 1], [8, 7]];   // cadência
+        const sobe = fraseB && compasso % 4 !== 3 ? 2 : 0;
+        notas.forEach(([p, g], i) => {
+            const prox = i + 1 < notas.length ? notas[i + 1][0] : 16;
+            toca(base + p, { inst: 'lead', f: freqMidi(nota(g + sobe, baseLead)), dur: Math.min(4, prox - p) });
+        });
+        // baixo (duas oitavas abaixo)
+        const raiz = nota(grauAc, d.tom - 24), quinta = nota(grauAc + 4, d.tom - 24), terca = nota(grauAc + 2, d.tom - 24);
+        const B = {
+            pulso: [[0, raiz, 3], [4, raiz, 3], [8, raiz, 3], [12, raiz, 3]],
+            andando: [[0, raiz, 4], [4, terca, 4], [8, quinta, 4], [12, raiz + 12, 4]],
+            oitavas: [0, 2, 4, 6, 8, 10, 12, 14].map((p, i) => [p, i % 2 ? raiz + 12 : raiz, 2]),
+            sincopado: [[0, raiz, 3], [3, raiz, 2], [6, quinta, 2], [10, raiz, 2], [12, quinta, 4]],
+            longo: [[0, raiz, 8], [8, quinta, 8]]
+        }[d.baixo];
+        for (const [p, m, dur] of B) toca(base + p, { inst: 'baixo', f: freqMidi(m), dur });
+        // bateria
+        const T = {
+            leve: { kick: [0, 8], hat: [4, 12] },
+            rock: { kick: [0, 8, 10], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14] },
+            eletronica: { kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14] },
+            tribal: { kick: [0, 6, 10], tom: [4, 12, 14] },
+            marcha: { kick: [0, 8], snare: [12, 14, 15] },
+            nenhuma: {}
+        }[d.bateria];
+        for (const tipo in T) for (const p of T[tipo]) toca(base + p, { inst: tipo });
+        // arpejo (uma oitava acima)
+        const ac = acordeDe(grauAc).map(g => freqMidi(nota(g, d.tom + 12)));
+        if (d.arpejo === 'sobe') for (let p = 0; p < 16; p += 2) toca(base + p, { inst: 'arpejo', f: ac[(p / 2) % 3], dur: 1 });
+        if (d.arpejo === 'desce') for (let p = 0; p < 16; p += 2) toca(base + p, { inst: 'arpejo', f: ac[2 - (p / 2) % 3], dur: 1 });
+        if (d.arpejo === 'pingue') for (const p of [2, 7, 10, 15]) toca(base + p, { inst: 'sino', f: ac[Math.floor(rnd() * 3)] * 2, dur: 3 });
+        // pad (acorde longo de fundo)
+        if (d.pad) toca(base, { inst: 'pad', f: ac.map(f => f / 4), dur: 16 });
+    }
+    const c = { def: d, eventos, passoSeg: 60 / d.bpm / 4 };
+    _cacheCancoes.set(id, c);
+    return c;
+}
+
+// ── Instrumentos ──
+let _ruido = null;
+function bufferRuido() {
+    if (!_ruido) {
+        _ruido = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.5, audioCtx.sampleRate);
+        const dados = _ruido.getChannelData(0);
+        for (let i = 0; i < dados.length; i++) dados[i] = Math.random() * 2 - 1;
+    }
+    return _ruido;
+}
+function tocarNotaMusica(ev, t, passoSeg, def) {
+    const ctxA = audioCtx, saida = musicGain;
+    const env = (g, vol, ataque, fim) => {
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol, t + ataque);
+        g.gain.exponentialRampToValueAtTime(0.0001, fim);
+    };
+    const osc = (tipo, f, vol, ataque, dur, detune = 0) => {
+        const o = ctxA.createOscillator(), g = ctxA.createGain();
+        o.type = tipo; o.frequency.value = f; o.detune.value = detune;
+        o.connect(g); g.connect(saida);
+        env(g, vol, ataque, t + dur);
+        o.start(t); o.stop(t + dur + 0.02);
+    };
+    const ruido = (filtro, freqF, vol, dur) => {
+        const s = ctxA.createBufferSource(), f = ctxA.createBiquadFilter(), g = ctxA.createGain();
+        s.buffer = bufferRuido(); f.type = filtro; f.frequency.value = freqF;
+        s.connect(f); f.connect(g); g.connect(saida);
+        env(g, vol, 0.002, t + dur);
+        s.start(t); s.stop(t + dur + 0.02);
+    };
+    const dur = (ev.dur || 1) * passoSeg;
+    switch (ev.inst) {
+        case 'lead': {
+            const vol = def.lead === 'sine' ? 0.07 : def.lead === 'triangle' ? 0.06 : def.lead === 'square' ? 0.028 : 0.022;
+            osc(def.lead, ev.f, vol, 0.012, Math.max(0.08, dur * 0.95));
+            if (def.lead === 'sine') osc('sine', ev.f * 2, vol * 0.25, 0.01, Math.max(0.06, dur * 0.6));   // brilho (flauta/sino)
+            break;
+        }
+        case 'baixo': osc('triangle', ev.f, 0.09, 0.008, Math.max(0.1, dur * 0.9)); break;
+        case 'arpejo': osc('sine', ev.f, 0.022, 0.005, 0.12); break;
+        case 'sino': osc('sine', ev.f, 0.03, 0.003, 0.6); osc('sine', ev.f * 3, 0.008, 0.003, 0.3); break;
+        case 'pad': for (const f of ev.f) { osc('triangle', f * 2, 0.012, 0.25, dur, -6); osc('triangle', f * 2, 0.012, 0.25, dur, 6); } break;
+        case 'kick': {
+            const o = ctxA.createOscillator(), g = ctxA.createGain();
+            o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+            o.connect(g); g.connect(saida); env(g, 0.28, 0.003, t + 0.18);
+            o.start(t); o.stop(t + 0.2);
+            break;
+        }
+        case 'snare': ruido('bandpass', 1800, 0.09, 0.13); osc('triangle', 190, 0.04, 0.002, 0.08); break;
+        case 'hat': ruido('highpass', 7000, 0.025, 0.04); break;
+        case 'tom': {
+            const o = ctxA.createOscillator(), g = ctxA.createGain();
+            o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(75, t + 0.2);
+            o.connect(g); g.connect(saida); env(g, 0.14, 0.003, t + 0.25);
+            o.start(t); o.stop(t + 0.27);
+            break;
+        }
+    }
+}
+
+// ── Agendador preciso: marca as notas um pouco à frente no relógio do áudio (não atrasa como setInterval) ──
+const musica = { timer: null, proxNota: 0, passo: 0, id: null, cancao: null };
+function musicaDoMomento() {
+    return (state === 'playing' || state === 'dying') ? currentPhase : 'menu';
+}
+function agendarMusica() {
+    if (!audioCtx || !musicGain) return;
+    const agora = audioCtx.currentTime;
+    if (musica.proxNota < agora - 0.2) musica.proxNota = agora + 0.05;   // aba ficou em segundo plano: não "despeja" notas atrasadas
+    while (musica.proxNota < agora + 0.12) {
+        // troca de música só no começo de um compasso (transição musical, sem cortar no meio)
+        const alvo = musicaDoMomento();
+        if (musica.passo % 16 === 0 && musica.id !== alvo) { musica.id = alvo; musica.cancao = cancaoDe(alvo); musica.passo = 0; }
+        const c = musica.cancao;
+        for (const ev of c.eventos[musica.passo % 128]) tocarNotaMusica(ev, musica.proxNota, c.passoSeg, c.def);
+        musica.proxNota += c.passoSeg;
+        musica.passo++;
+    }
+}
 
 function startMusic() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    if (musicInterval) return; // Já está rodando o sequencer!
-
     if (!musicGain) {
         musicGain = audioCtx.createGain();
         musicGain.connect(audioCtx.destination);
     }
-    musicGain.gain.value = isMuted ? 0 : 0.8;
-
-    const n = { B1: 61.7, C2: 65.4, D2: 73.4, E2: 82.4, B2: 123.5, C3: 130.8, D3: 146.8, E3: 164.8, G3: 196.0, A3: 220.0, B3: 246.9, C4: 261.6, D4: 293.7, E4: 329.6, G4: 392.0, A4: 440.0, B4: 493.9, C5: 523.3, D5: 587.3, E5: 659.3 };
-
-    const leadSeq = [
-        n.E4, null, n.G4, n.E4, n.D4, null, n.A4, n.D4, n.C4, null, n.G4, n.C4, n.B3, null, n.D4, n.B3,
-        n.E4, n.D4, n.G4, n.E4, n.A4, n.G4, n.B4, n.A4, n.C5, n.B4, n.A4, n.G4, n.E4, n.D4, n.C4, n.B3
-    ];
-
-    const bassSeq = [
-        n.E2, n.E2, n.E3, n.E2, n.D2, n.D2, n.D3, n.D2, n.C2, n.C2, n.C3, n.C2, n.B1, n.B1, n.B2, n.B1,
-        n.E2, n.E2, n.E3, n.E2, n.D2, n.D2, n.D3, n.D2, n.C2, n.C2, n.C3, n.C2, n.B1, n.B1, n.B2, n.B1
-    ];
-
-    const arpSeq = [
-        n.E4, n.G4, n.B4, n.E5, n.D4, n.A4, n.D5, n.A4, n.C4, n.G4, n.C5, n.G4, n.B3, n.D4, n.G4, n.B4,
-        n.E4, n.B4, n.G4, n.E5, n.D4, n.A4, n.D5, n.A4, n.C4, n.G4, n.E5, n.G4, n.B3, n.D4, n.G4, n.B4
-    ];
-
-    let step = 0;
-
-    musicInterval = setInterval(() => {
-        let now = audioCtx.currentTime;
-        let speedMult = 1 + (currentPhase * 0.04); // Muda o tom (Pitch) conforme as Fases
-
-        // Canal Lead (Square wave estilo chiptune melody)
-        let leadF = leadSeq[step % 32];
-        if (leadF) {
-            let osc = audioCtx.createOscillator(); let g = audioCtx.createGain();
-            osc.type = 'square'; osc.frequency.value = leadF * speedMult;
-            osc.connect(g); g.connect(musicGain);
-            g.gain.setValueAtTime(0.04, now);
-            g.gain.exponentialRampToValueAtTime(0.001, now + 0.15); // Enveloper staccato
-            osc.start(now); osc.stop(now + 0.15);
-        }
-
-        // Canal Bass (Triangle wave profunda)
-        let bassF = bassSeq[step % 32];
-        if (bassF) {
-            let oscB = audioCtx.createOscillator(); let gB = audioCtx.createGain();
-            oscB.type = 'triangle'; oscB.frequency.value = bassF * speedMult;
-            oscB.connect(gB); gB.connect(musicGain);
-            gB.gain.setValueAtTime(0.08, now);
-            gB.gain.linearRampToValueAtTime(0.01, now + 0.2);
-            oscB.start(now); oscB.stop(now + 0.2);
-        }
-
-        // Canal Arpeggio (Sawtooth cintilante e rápida)
-        let arpF = arpSeq[step % 32];
-        if (arpF && (state === 'playing' || state === 'menu')) {
-            let oscA = audioCtx.createOscillator(); let gA = audioCtx.createGain();
-            oscA.type = 'sawtooth'; oscA.frequency.value = arpF * speedMult;
-            oscA.connect(gA); gA.connect(musicGain);
-            gA.gain.setValueAtTime(0.02, now);
-            gA.gain.linearRampToValueAtTime(0.001, now + 0.1);
-            oscA.start(now); oscA.stop(now + 0.1);
-        }
-
-        step++;
-    }, 125); // Velocidade (125ms = bpm intenso)
+    musicGain.gain.value = isMuted ? 0 : VOLUME_MUSICA;
+    if (musica.timer) return;   // já está tocando
+    musica.proxNota = audioCtx.currentTime + 0.05;
+    musica.passo = 0; musica.id = null;
+    musica.timer = setInterval(agendarMusica, 25);
 }
 
 function updateGlobalStarsDisplay() {
