@@ -323,7 +323,19 @@ async function rodar() {
         ok(fada && fada.x >= 0 && fada.x <= cw, `Fadinha continua na tela em jogo rápido (x ${fada ? Math.round(fada.x) : 'sumiu'})`);
         ok(pegas >= 10, `Fadinha + personagem pegam as estrelas em jogo rápido (${pegas} pegas)`);
         zerarPoderesNovos();
-        magnetTimeLeft = 0; coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
+        // Chuva de estrelas: estrelas caem do céu enquanto o poder dura, e param quando acaba
+        stars = []; player.hurtFrames = 9999; isPaused = false;
+        coletarPowerup({ type: 'coinshower', x: distance + player.x, y: player.y });
+        for (let k = 0; k < 60; k++) step();
+        const caindo = stars.filter(s => s.chuva && !s.collected);
+        const y0 = caindo.map(s => s.y); step(); step();
+        ok(caindo.length >= 4 && caindo.every((s, i) => s.collected || s.y > y0[i]), `Chuva de estrelas: estrelas caindo (${caindo.length})`);
+        poderes.coinshower = 0.01; for (let k = 0; k < 5; k++) step();
+        const qtd = stars.filter(s => s.chuva).length; for (let k = 0; k < 30; k++) step();
+        ok(!ativo('coinshower') && stars.filter(s => s.chuva).length <= qtd, 'Chuva de estrelas para quando o tempo acaba');
+        isPaused = true; player.hurtFrames = 0;
+        zerarPoderesNovos();
+        magnetTimeLeft = 0;coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
         ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01, `duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
         // música: cada fase (+ menu) tem composição completa, audível e diferente das outras
         {

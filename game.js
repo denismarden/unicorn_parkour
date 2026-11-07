@@ -50,7 +50,8 @@ const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance re
 const DURACAO_PODER = {
     magnet: 15, shield: 25, bonus: 15, slowmo: 9, infjump: 18, shrink: 12, giant: 12, meteor: 12,
     rocket: 8, blackhole: 10, lucky: 15, hover: 14, nogap: 20, voo: 18, omni: 18,
-    estrelax2: 15, fantasma: 10, mola: 12, gelo: 14, bolha: 25, cometa: 10, dashinf: 12, superpulo: 12, laser: 12, fada: 15
+    estrelax2: 15, fantasma: 10, mola: 12, gelo: 14, bolha: 25, cometa: 10, dashinf: 12, superpulo: 12, laser: 12, fada: 15,
+    coinshower: 10   // Chuva de estrelas
 };
 const DURACAO_ESCUDO = DURACAO_PODER.shield;   // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.06;          // por plataforma (~2 power-ups por minuto)
@@ -3549,6 +3550,18 @@ function desenharSelosPoderes(ctx) {
 
 // Moldura colorida na tela enquanto um poder "grande" está ativo
 function desenharVinhetaPoder(ctx) {
+    if (ativo('coinshower')) {
+        // Chuva de estrelas: brilho dourado vindo do alto da tela (de onde as estrelas caem)
+        ctx.save();
+        ctx.globalAlpha = 0.8 + 0.2 * Math.sin(frames * 0.1);
+        ctx.fillStyle = gradCache(`chuvaTopo|${ch}`, () => {
+            const gr = ctx.createLinearGradient(0, 0, 0, ch * 0.3);
+            gr.addColorStop(0, 'rgba(255,224,138,0.35)'); gr.addColorStop(1, 'rgba(255,224,138,0)');
+            return gr;
+        });
+        ctx.fillRect(0, 0, cw, ch * 0.3);
+        ctx.restore();
+    }
     const cor = isSlowMoActive ? CORES_PODER.slowmo : isBlackHoleActive ? CORES_PODER.blackhole
         : isRocketActive ? '#FF8A3A' : isGiantActive ? CORES_PODER.giant : isBonusActive ? CORES_PODER.bonus : null;
     if (!cor) return;
@@ -3567,8 +3580,9 @@ function desenharVinhetaPoder(ctx) {
 // ─────────────────────────────────────────────────────────────────────────
 // PODERES NOVOS — sistema genérico: estado numa tabela, pílula do HUD criada sozinha
 // ─────────────────────────────────────────────────────────────────────────
-const PODERES_NOVOS = ['estrelax2', 'fantasma', 'mola', 'gelo', 'bolha', 'cometa', 'dashinf', 'superpulo', 'laser', 'fada'];
-const LASER_ALCANCE = 380;            // px à frente: o Raio destrói obstáculos até esta distância
+const PODERES_NOVOS = ['estrelax2', 'fantasma', 'mola', 'gelo', 'bolha', 'cometa', 'dashinf', 'superpulo', 'laser', 'fada', 'coinshower'];
+const INTERVALO_CHUVA = 3;            // Chuva de estrelas: 1 estrela nova a cada 3 passos (~20 por segundo)
+const LASER_ALCANCE = 380;           // px à frente: o Raio destrói obstáculos até esta distância
 const FADA_ALCANCE = 300;             // px: a Fadinha busca estrelas até esta distância do personagem
 const poderes = {};                   // id → segundos restantes
 const ativo = (id) => (poderes[id] || 0) > 0;
@@ -3629,6 +3643,15 @@ function passoPoderesNovos(dt) {
         const st = pickStarType();
         const yAlvo = ch * (0.15 + Math.random() * 0.45);
         stars.push({ x: distance + cw * (0.45 + Math.random() * 0.6), y: -30, cai: yAlvo + 30, size: st.size, starType: st, collected: false, oscOffset: Math.random() * 6.28 });
+    }
+    // Chuva de estrelas: estrelas caindo do céu sem parar, inclinadas como chuva (dá para pegar no caminho)
+    if (ativo('coinshower') && frames % INTERVALO_CHUVA === 0) {
+        const st = pickStarType();
+        stars.push({
+            x: distance + player.x - 60 + Math.random() * (cw - player.x + 120), y: -20 - Math.random() * 40,
+            chuva: { vy: 3.2 + Math.random() * 2.6, vx: -0.8 - Math.random() * 1.2 },
+            size: st.size, starType: st, collected: false, oscOffset: Math.random() * 6.28
+        });
     }
     if (ativo('laser')) passoLaser();
     for (let i = raios.length - 1; i >= 0; i--) if (--raios[i].t <= 0) raios.splice(i, 1);
@@ -4305,6 +4328,11 @@ function step() {
             if (frames % 2 === 0) emitirParticula({ x: s.x - distance, y: s.y - 6, vx: 0, vy: -1, life: 0.5, size: 9, forma: 'brilho', color: (s.starType || STAR_TYPES[0]).color });
             continue;
         }
+        // estrela da Chuva de estrelas: cai até sair por baixo da tela (dá para pegar enquanto cai)
+        if (s.chuva) {
+            s.y += s.chuva.vy * ts; s.x += s.chuva.vx * ts;
+            if (s.y > ch + 40) { s.collected = true; continue; }
+        }
         let dx = pCX - s.x;
         let dy = pCY - s.y;
         let dist = Math.hypot(dx, dy);
@@ -4674,20 +4702,8 @@ function coletarPowerup(pu) {
             score += 80 * pm;
             break;
         case 'coinshower':
+            // Chuva de estrelas: por DURACAO_PODER.coinshower segundos, estrelas caem do céu (ver passoPoderesNovos)
             score += 500 * pm;
-           
-            // Estrelas à frente do jogador (no mundo) para ele passar por elas
-            for (let i = 0; i < 20; i++) {
-                let st = pickStarType();
-                stars.push({
-                    x: distance + player.x + player.w / 2 + Math.random() * 800 + 50,
-                    y: player.y - 40 - Math.random() * (ch * 0.4),
-                    size: st.size,
-                    starType: st,
-                    collected: false,
-                    oscOffset: Math.random() * Math.PI * 2
-                });
-            }
             break;
         case 'rainbow':
             score += 500 * pm;
@@ -5611,7 +5627,16 @@ function render() {
     // Estrelas, penas e power-ups (só os que estão na tela)
     for (let s of stars) {
         const sx = s.x - distance;
-        if (!s.collected && sx > -40 && sx < cw + 40) drawStar(ctx, sx, s.y, s.size, s.collected, (frames * 0.05) + s.oscOffset, s.starType);
+        if (s.collected || sx < -40 || sx > cw + 40) continue;
+        if (s.chuva) {
+            // risco de luz atrás da estrela que cai (sem criar degradê: 2 traços com transparência)
+            const c = s.starType ? s.starType.color : PALETA.destaque, rx = -s.chuva.vx * 6, ry = -s.chuva.vy * 6;
+            ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = c;
+            ctx.globalAlpha = 0.18; ctx.lineWidth = s.size * 0.9; ctx.beginPath(); ctx.moveTo(sx, s.y); ctx.lineTo(sx + rx, s.y + ry); ctx.stroke();
+            ctx.globalAlpha = 0.5; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, s.y); ctx.lineTo(sx + rx * 0.6, s.y + ry * 0.6); ctx.stroke();
+            ctx.restore();
+        }
+        drawStar(ctx, sx, s.y, s.size, s.collected, (frames * 0.05) + s.oscOffset, s.starType);
     }
     for (let f of feathers) {
         if (!f.collected) drawFeather(ctx, f.x - distance, f.y, f.size, f.collected, (frames * 0.05) + f.oscOffset);
