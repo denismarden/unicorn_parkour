@@ -3453,33 +3453,61 @@ function drawMagnetField(ctx, p) {
     ctx.restore();
 }
 
+// Pena do power-up de voo: pré-desenhada uma vez (cabo curvo, duas metades desiguais com fendas e fiozinhos)
+function spritePena() {
+    return spriteCache('penaVoo', 160, (g, T) => {
+        const k = T / 64;          // desenha num espaço 64×64
+        g.scale(k, k);
+        g.translate(32, 34); g.rotate(-0.55);   // pena inclinada, cabo embaixo à esquerda
+        // contorno da pena (metade de cima mais estreita, de baixo mais larga), com 2 fendas
+        const vane = new Path2D();
+        vane.moveTo(0, 26);                                     // começo da parte com fios (perto do cabo)
+        vane.bezierCurveTo(-9, 18, -10, 4, -7, -8);             // borda esquerda
+        vane.lineTo(-4.5, -9);                                  // fenda 1
+        vane.bezierCurveTo(-6, -18, -3, -26, 1, -29);           // até a ponta
+        vane.bezierCurveTo(6, -24, 8, -14, 7, -3);              // borda direita
+        vane.lineTo(4.5, -1.5);                                 // fenda 2
+        vane.bezierCurveTo(8, 6, 6, 18, 0, 26);
+        vane.closePath();
+        g.lineJoin = 'round';
+        g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 3.2; g.stroke(vane);
+        const grad = g.createLinearGradient(0, -29, 0, 26);
+        grad.addColorStop(0, '#FFFFFF'); grad.addColorStop(0.55, '#F2ECFF'); grad.addColorStop(1, '#C9B8FF');
+        g.fillStyle = grad; g.fill(vane);
+        // fiozinhos (barbas) diagonais saindo do cabo
+        g.save(); g.clip(vane);
+        g.strokeStyle = 'rgba(140,110,200,0.45)'; g.lineWidth = 0.8;
+        for (let y = -24; y < 24; y += 3.2) {
+            g.beginPath(); g.moveTo(0.3, y); g.lineTo(-10, y - 6); g.stroke();
+            g.beginPath(); g.moveTo(0.3, y); g.lineTo(10, y - 5); g.stroke();
+        }
+        g.fillStyle = 'rgba(255,255,255,0.6)';   // brilho
+        g.beginPath(); g.ellipse(-3.5, -12, 1.6, 7, 0.15, 0, Math.PI * 2); g.fill();
+        g.restore();
+        // cabo (raque) levemente curvo, passando do fim da pena
+        g.lineCap = 'round';
+        g.strokeStyle = PALETA.nuvemContorno; g.lineWidth = 3.4;
+        g.beginPath(); g.moveTo(1, -27); g.quadraticCurveTo(0.6, 4, -1.5, 31); g.stroke();
+        g.strokeStyle = '#FFF6E8'; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(1, -27); g.quadraticCurveTo(0.6, 4, -1.5, 31); g.stroke();
+    });
+}
+
 function drawFeather(ctx, x, y, size, collected, t) {
     if (collected) return;
     ctx.save();
     ctx.translate(x, y + Math.sin(t) * 10);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(spriteLuz('#FFFFFF'), -size * 1.6, -size * 1.6, size * 3.2, size * 3.2);
+    ctx.drawImage(spriteLuz('#DCD0FF'), -size * 1.8, -size * 1.8, size * 3.6, size * 3.6);
     ctx.restore();
-    ctx.rotate(Math.sin(t * 0.5) * 0.2);
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = PALETA.nuvemContorno; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(0, size);
-    ctx.quadraticCurveTo(-size, size / 2, 0, -size);
-    ctx.quadraticCurveTo(size, size / 2, 0, size);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, size);
-    ctx.quadraticCurveTo(-size, size / 2, 0, -size);
-    ctx.quadraticCurveTo(size, size / 2, 0, size);
-    ctx.fill();
-    ctx.strokeStyle = "#aaaaaa";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, size);
-    ctx.lineTo(0, -size + 4);
-    ctx.stroke();
+    // balança como uma pena caindo (vai e volta, inclinando)
+    ctx.rotate(Math.sin(t * 0.9) * 0.35);
+    const tam = size * 3;
+    ctx.drawImage(spritePena(), -tam / 2, -tam / 2, tam, tam);
+    // brilhinho piscando na ponta
+    const b = 6 + 3 * Math.sin(t * 3);
+    ctx.drawImage(spriteEstrelinha('#FFFFFF'), size * 0.35 - b / 2, -size * 1.05 - b / 2, b, b);
     ctx.restore();
 }
 

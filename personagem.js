@@ -1507,31 +1507,75 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
 }
 
 // Asa de penas (coordenadas da asa; pivô na cernelha). fundo = asa de trás, mais escura
+// Pena comprida com ponta arredondada, apontando para +x (usada nas asas)
+function caminhoPenaAsa(L, W) {
+    const p = new Path2D();
+    p.moveTo(0, -W * 0.35);
+    p.quadraticCurveTo(L * 0.5, -W * 0.62, L - W * 0.5, -W * 0.48);
+    p.arc(L - W * 0.5, 0, W * 0.5, -Math.PI / 2, Math.PI / 2);
+    p.quadraticCurveTo(L * 0.5, W * 0.6, 0, W * 0.35);
+    p.closePath();
+    return p;
+}
+// Penas da asa: [direção em graus (0 = direita, 270 = para cima), comprimento, largura]
+const PENAS_ASA = [[244, 23, 9], [228, 28, 9.5], [212, 31, 9.5], [196, 29, 9]];   // varridas para trás, sobrepostas
+const _PENAS_ASA_PATH = PENAS_ASA.map(([, L, W]) => caminhoPenaAsa(L, W));
+const COBERTURA_ASA = (() => {   // parte de cima da asa (o "braço"), cobre a raiz das penas
+    const c = new Path2D();
+    c.moveTo(3, 2);
+    c.bezierCurveTo(5, -10, -3, -21, -12, -20);
+    c.quadraticCurveTo(-15, -12, -11, -7);
+    c.quadraticCurveTo(-6, -2, 3, 2);
+    c.closePath();
+    return c;
+})();
+
+// cor da crina clareada para as pontas das penas (em cache: não cria texto novo a cada quadro)
+const _cacheClareada = new Map();
+function corMisturada(cor) {
+    let c = _cacheClareada.get(cor);
+    if (!c) { c = paraHex(misturar(paraRGBA(cor), _BRANCO, 0.4)); _cacheClareada.set(cor, c); }
+    return c;
+}
+
 function desenharAsa(ctx, pal, lw, angulo, fundo) {
     ctx.save();
     ctx.rotate(angulo);
-    const asa = new Path2D();
-    asa.moveTo(0, 0);
-    asa.bezierCurveTo(2, -8, -4, -18, -12, -20);
-    asa.quadraticCurveTo(-22, -21, -25, -15);
-    asa.quadraticCurveTo(-20, -13, -22, -9);
-    asa.quadraticCurveTo(-17, -9, -18, -5);
-    asa.quadraticCurveTo(-13, -5, -12, -1.5);
-    asa.quadraticCurveTo(-6, -0.5, 0, 0);
-    asa.closePath();
+    ctx.scale(1.15, 1.15);
+    // as penas se abrem um pouco quando a asa sobe (leque)
+    const abre = 1 + Math.max(0, -angulo) * 0.35;
+    const raizX = -2, raizY = -6;
+    const cont = pal.contorno, base = fundo ? pal.fundo : '#FFFFFF';
+    // pontas com a cor da crina clareada (suave: a asa continua branca)
+    const ponta = corMisturada(fundo ? pal.crinaFundo[0] : pal.crina[0]), ponta2 = corMisturada(fundo ? pal.crinaFundo[1] : pal.crina[2]);
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 1.6; ctx.stroke(asa);
-    ctx.fillStyle = fundo ? pal.fundo : '#FFFFFF'; ctx.fill(asa);
-    // pontas das penas na cor da crina
-    ctx.save();
-    ctx.clip(asa);
-    ctx.fillStyle = fundo ? pal.crinaFundo[0] : pal.crina[0];
-    ctx.beginPath(); ctx.ellipse(-22, -12, 7, 12, 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 0.45;
-    ctx.beginPath();
-    ctx.moveTo(-3, -4); ctx.quadraticCurveTo(-10, -9, -18, -9);
-    ctx.moveTo(-5, -9); ctx.quadraticCurveTo(-12, -14, -21, -14);
-    ctx.stroke();
+    // 1) contorno único por trás de tudo (penas + cobertura)
+    ctx.strokeStyle = cont; ctx.lineWidth = lw * 1.5 / 1.15;
+    PENAS_ASA.forEach(([ang], i) => {
+        ctx.save(); ctx.translate(raizX, raizY); ctx.rotate(((ang - 220) * abre + 220) * Math.PI / 180);
+        ctx.stroke(_PENAS_ASA_PATH[i]); ctx.restore();
+    });
+    ctx.stroke(COBERTURA_ASA);
+    // 2) penas, da de cima (atrás) para a de baixo (frente): branco + ponta colorida + sombra separando
+    PENAS_ASA.forEach(([ang, L], i) => {
+        ctx.save(); ctx.translate(raizX, raizY); ctx.rotate(((ang - 220) * abre + 220) * Math.PI / 180);
+        const pena = _PENAS_ASA_PATH[i];
+        ctx.fillStyle = base; ctx.fill(pena);
+        ctx.save(); ctx.clip(pena);
+        ctx.fillStyle = i % 2 ? ponta2 : ponta;
+        ctx.beginPath(); ctx.ellipse(L, 0, L * 0.3, 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(90,58,138,0.22)';   // sombra na borda de baixo: separa uma pena da outra
+        ctx.fillRect(0, 1.2, L, 6);
+        ctx.restore();
+        ctx.restore();
+    });
+    // 3) cobertura por cima, com sombra suave e "escamas" de penas pequenas
+    ctx.fillStyle = base; ctx.fill(COBERTURA_ASA);
+    ctx.save(); ctx.clip(COBERTURA_ASA);
+    ctx.fillStyle = 'rgba(90,58,138,0.18)';
+    for (const [x, y] of [[-8, -9], [-3, -6], [-10, -15]]) { ctx.beginPath(); ctx.arc(x, y + 3, 3.4, 0, Math.PI); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.ellipse(-3, -15, 3, 1.2, -0.6, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     ctx.restore();
 }
