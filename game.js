@@ -3477,7 +3477,7 @@ function spritePena() {
         // metade direita sombreada (lilás) + ponta rosada: volume de "desenho animado"
         g.fillStyle = '#D9CCFF';
         g.beginPath(); g.moveTo(1.2, -30); g.quadraticCurveTo(1.6, 0, 0.4, 20); g.lineTo(14, 20); g.lineTo(14, -30); g.closePath(); g.fill();
-        g.fillStyle = 'rgba(255,156,203,0.55)';
+        g.fillStyle = 'rgba(185,164,255,0.75)';   // ponta lavanda (igual às asas)
         g.beginPath(); g.ellipse(2, -24, 10, 7, 0, 0, Math.PI * 2); g.fill();
         // brilho grande no lado claro
         g.fillStyle = 'rgba(255,255,255,0.95)';

@@ -1063,7 +1063,7 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const desenharAsaPenas = (fundo) => {
         ctx.save(); ctx.translate(PIVO_ASA[0] + (fundo ? 2 : 0), PIVO_ASA[1] - (fundo ? 1 : 0));
         if (asinhas) ctx.scale(0.55, 0.55);
-        desenharAsa(ctx, pal, lw, (asinhas ? bateAsa * 0.4 : bateAsa) * (fundo ? 0.9 : 1) + (fundo ? 0.15 : 0), fundo);
+        desenharAsa(ctx, pal, lw, (asinhas ? bateAsa * 0.4 : bateAsa) * (fundo ? 0.9 : 1) + (fundo ? 0.15 : 0), fundo, tempo);
         ctx.restore();
     };
     if (esp.asas === 'morcego') {
@@ -1507,72 +1507,114 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
 }
 
 // Asa de penas (coordenadas da asa; pivô na cernelha). fundo = asa de trás, mais escura
-// ── Asa fofinha (estilo jogo mobile kawaii): silhueta única e gordinha, borda de baixo em gomos redondos ──
-// Coordenadas: ombro em (0,0); a asa sobe e vai para trás (x e y negativos).
-const ASA_FOFA = (() => {
-    const a = new Path2D();
-    a.moveTo(3, 1);
-    a.bezierCurveTo(4, -10, -8, -20, -24, -22);      // borda da frente, subindo para trás
-    a.bezierCurveTo(-32, -23, -38, -19, -36, -14);   // ponta arredondada
-    // 4 gomos na borda de trás (de cima para baixo, voltando ao ombro); as junções fazem os "dentes"
-    a.quadraticCurveTo(-41, -7, -32, -7);
-    a.quadraticCurveTo(-34, 1, -24, -1);
-    a.quadraticCurveTo(-23, 6, -14, 2);
-    a.quadraticCurveTo(-8, 7, 3, 1);
-    a.closePath();
-    return a;
-})();
-// curvinhas que separam os gomos (saem da junção para dentro, curtas)
-const ASA_DIVISOES = [[-32, -7, -26, -11], [-24, -1, -19, -6], [-14, 2, -10, -3]];
-// fileira de peninhas pequenas no alto da asa (2ª camada)
-const ASA_COBERTURA = (() => {
+// ── Asa grande de pégaso: tufo fofo no ombro + 2 fileiras de penas longas em leque (para cima e para trás) ──
+// Coordenadas: ombro em (0,0). Cada pena é desenhada apontando para +x e girada para a sua direção.
+function caminhoPenaLonga(L, W) {
+    const p = new Path2D();
+    p.moveTo(0, -W * 0.3);
+    p.bezierCurveTo(L * 0.35, -W * 0.8, L * 0.78, -W * 0.62, L - 1, -W * 0.12);   // lado de cima, cheio
+    p.quadraticCurveTo(L + 1.2, W * 0.12, L - 2.5, W * 0.3);                       // ponta arredondada
+    p.bezierCurveTo(L * 0.75, W * 0.6, L * 0.35, W * 0.62, 0, W * 0.3);
+    p.closePath();
+    return p;
+}
+// [x, y da raiz, direção em graus (180 = para trás, 270 = para cima), comprimento, largura]
+const PENAS_PRIMARIAS = [[-7, -22, 236, 40, 11.5], [-8, -18, 221, 46, 12], [-8, -13, 206, 46, 12], [-7, -8, 192, 42, 11.5], [-5, -4, 179, 35, 11]]
+    .map(([x, y, a, L, W]) => ({ x, y, a: a * Math.PI / 180, L, W, path: caminhoPenaLonga(L, W) }));
+const PENAS_SECUNDARIAS = [[-4, -18, 228, 26, 11], [-4, -13, 212, 29, 11], [-3, -8, 197, 28, 11], [-2, -3, 183, 24, 10.5]]
+    .map(([x, y, a, L, W]) => ({ x, y, a: a * Math.PI / 180, L, W, path: caminhoPenaLonga(L, W) }));
+// tufo fofo no ombro (base da asa), inclinado para trás, com a borda de trás em gomos de nuvem
+const TUFO_ASA = (() => {
     const c = new Path2D();
-    c.moveTo(3, 1);
-    c.bezierCurveTo(4, -10, -8, -20, -24, -22);
-    c.quadraticCurveTo(-28, -15, -21, -14);
-    c.quadraticCurveTo(-20, -8, -12, -9);
-    c.quadraticCurveTo(-7, -3, 0, -4);
-    c.quadraticCurveTo(3, -2, 3, 1);
+    c.moveTo(4, 2);
+    c.bezierCurveTo(7, -7, 2, -18, -8, -22);           // frente, subindo para trás
+    c.quadraticCurveTo(-15, -22, -13, -17);            // topo
+    c.quadraticCurveTo(-18, -13, -13, -10);
+    c.quadraticCurveTo(-17, -5, -11, -3);
+    c.quadraticCurveTo(-12, 3, -4, 1);
+    c.quadraticCurveTo(-1, 5, 4, 2);
     c.closePath();
     return c;
 })();
 
-// cor da crina clareada para os gomos (em cache: não cria texto novo a cada quadro)
-const _cacheClareada = new Map();
-function corMisturada(cor, k = 0.45) {
-    const chave = cor + k;
-    let c = _cacheClareada.get(chave);
-    if (!c) { c = paraHex(misturar(paraRGBA(cor), _BRANCO, k)); _cacheClareada.set(chave, c); }
+// cores da asa (em cache por personagem): lavanda levemente puxado para a crina
+const _cacheCoresAsa = new Map();
+function coresAsa(pal) {
+    let c = _cacheCoresAsa.get(pal);
+    if (!c) {
+        const crina = paraRGBA(pal.crina[2] || pal.crina[0]);
+        const lav = misturar(paraRGBA('#B9A4FF'), crina, 0.25);
+        c = {
+            ponta: paraHex(lav),                                  // ponta das penas
+            meio: paraHex(misturar(lav, _BRANCO, 0.55)),          // faixa do meio
+            brilho: paraHex(misturar(lav, _BRANCO, 0.85)),        // fio de luz no centro da pena
+            tufoSombra: paraHex(misturar(lav, _BRANCO, 0.6)),
+            fundoPonta: paraHex(misturar(lav, _ROXO_SOMBRA, 0.35)),
+            fundoBase: paraHex(misturar(lav, _BRANCO, 0.35))
+        };
+        _cacheCoresAsa.set(pal, c);
+    }
     return c;
 }
 
-function desenharAsa(ctx, pal, lw, angulo, fundo) {
+function desenharPenaAsa(ctx, pena, cores, cont, lw, fundo) {
+    ctx.save();
+    ctx.translate(pena.x, pena.y); ctx.rotate(pena.a);
+    const p = pena.path, L = pena.L;
+    ctx.strokeStyle = cont; ctx.lineWidth = lw; ctx.stroke(p);
+    // degradê suave branco (raiz) → lavanda (ponta); criado uma vez por pena e cor, depois reaproveitado
+    const chave = (fundo ? 'f' : 'n') + cores.ponta;
+    if (!pena.grad) pena.grad = new Map();
+    let g = pena.grad.get(chave);
+    if (!g) {
+        g = ctx.createLinearGradient(0, 0, L, 0);
+        g.addColorStop(0, fundo ? cores.fundoBase : '#FFFFFF');
+        g.addColorStop(0.35, fundo ? cores.fundoBase : '#FFFFFF');
+        g.addColorStop(0.7, fundo ? cores.fundoBase : cores.meio);
+        g.addColorStop(1, fundo ? cores.fundoPonta : cores.ponta);
+        pena.grad.set(chave, g);
+    }
+    ctx.fillStyle = g; ctx.fill(p);
+    ctx.save(); ctx.clip(p);
+    // fio de luz ao longo da pena
+    ctx.strokeStyle = fundo ? 'rgba(255,255,255,0.35)' : cores.brilho; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(2, -pena.W * 0.12); ctx.quadraticCurveTo(L * 0.5, -pena.W * 0.3, L * 0.85, -pena.W * 0.08); ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+}
+
+function desenharAsa(ctx, pal, lw, angulo, fundo, tempo = 0) {
     ctx.save();
     ctx.rotate(angulo);
-    ctx.scale(1.05, 1.05);
-    const branco = fundo ? pal.fundo : '#FFFFFF';
-    const tom = corMisturada(fundo ? pal.crinaFundo[0] : pal.crina[0], fundo ? 0.2 : 0.5);
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    // contorno grosso (padrão do personagem) por trás
-    ctx.strokeStyle = pal.contorno; ctx.lineWidth = lw * 1.7; ctx.stroke(ASA_FOFA);
-    ctx.fillStyle = branco; ctx.fill(ASA_FOFA);
-    ctx.save(); ctx.clip(ASA_FOFA);
-    // gomos de baixo com a cor da crina bem clarinha (degradê suave da raiz para a ponta)
-    ctx.fillStyle = tom;
-    ctx.beginPath(); ctx.ellipse(-27, -4, 15, 8, -0.35, 0, Math.PI * 2); ctx.fill();
-    // fileira de cima, branca, com sombrinha embaixo (separa as camadas sem linha)
-    ctx.fillStyle = 'rgba(90,58,138,0.16)';
-    ctx.translate(0, 2.2); ctx.fill(ASA_COBERTURA); ctx.translate(0, -2.2);
-    ctx.fillStyle = branco; ctx.fill(ASA_COBERTURA);
-    // brilho na borda da frente
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath(); ctx.ellipse(-13, -17, 6, 1.8, -0.45, 0, Math.PI * 2); ctx.fill();
+    const cores = coresAsa(pal), cont = pal.contorno;
+    ctx.lineJoin = 'round';
+    // brilho mágico atrás da asa (só a da frente)
+    if (!fundo) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz('#B9A4FF'), -50, -55, 60, 60);
+        ctx.restore();
+    }
+    // 1) penas longas (atrás), de baixo para cima: a de cima fica por cima
+    for (let i = PENAS_PRIMARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_PRIMARIAS[i], cores, cont, lw * 1.1, fundo);
+    // 2) penas curtas (na frente)
+    for (let i = PENAS_SECUNDARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_SECUNDARIAS[i], cores, cont, lw * 1.1, fundo);
+    // 3) tufo fofo no ombro
+    ctx.strokeStyle = cont; ctx.lineWidth = lw * 1.3; ctx.stroke(TUFO_ASA);
+    ctx.fillStyle = fundo ? cores.fundoBase : '#FFFFFF'; ctx.fill(TUFO_ASA);
+    ctx.save(); ctx.clip(TUFO_ASA);
+    ctx.fillStyle = fundo ? cores.fundoPonta : cores.tufoSombra;
+    ctx.beginPath(); ctx.ellipse(-14, -10, 5, 14, 0.4, 0, Math.PI * 2); ctx.fill();   // sombra nos gomos de trás
     ctx.restore();
-    // curvinhas entre os gomos
-    ctx.strokeStyle = pal.contornoInterno || pal.contorno; ctx.lineWidth = lw * 0.6;
-    ctx.beginPath();
-    for (const [x0, y0, x1, y1] of ASA_DIVISOES) { ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 - 1, (y0 + y1) / 2 + 1, x1, y1); }
-    ctx.stroke();
+    // 4) estrelinhas piscando nas pontas (pó mágico)
+    if (!fundo) {
+        const img = spriteEstrelinha('#FFFFFF');
+        for (let i = 0; i < 4; i++) {
+            const pena = PENAS_PRIMARIAS[i];
+            const k = 0.5 + 0.5 * Math.sin(tempo * 5 + i * 1.7);
+            const d = pena.L * 0.85, tam = 3 + 4 * k;
+            ctx.drawImage(img, pena.x + Math.cos(pena.a) * d - tam / 2, pena.y + Math.sin(pena.a) * d - tam / 2, tam, tam);
+        }
+    }
     ctx.restore();
 }
 
