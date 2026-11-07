@@ -1061,9 +1061,10 @@ function desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano) {
     const bateAsa = 25 * Math.sin(tempo * 2 * Math.PI * 2.2) * Math.PI / 180;
     const bateMorcego = (voando ? 25 * Math.sin(tempo * 2 * Math.PI * 2.2) : 6 * Math.sin(tempo * 2 * Math.PI)) * Math.PI / 180;
     const desenharAsaPenas = (fundo) => {
-        ctx.save(); ctx.translate(PIVO_ASA[0] + (fundo ? 2 : 0), PIVO_ASA[1] - (fundo ? 1 : 0));
+        // asa grande nasce no meio das costas (fica atrás da cabeça); a de trás um pouco mais para trás e mais levantada
+        ctx.save(); ctx.translate(PIVO_ASA[0] - (asinhas ? 0 : 6) - (fundo ? 3 : 0), PIVO_ASA[1] - (fundo ? 2 : 0));
         if (asinhas) ctx.scale(0.55, 0.55);
-        desenharAsa(ctx, pal, lw, (asinhas ? bateAsa * 0.4 : bateAsa) * (fundo ? 0.9 : 1) + (fundo ? 0.15 : 0), fundo, tempo);
+        desenharAsa(ctx, pal, lw, (asinhas ? bateAsa * 0.4 : bateAsa) * (fundo ? 0.9 : 1) + (fundo ? -0.28 : 0), fundo, tempo);
         ctx.restore();
     };
     if (esp.asas === 'morcego') {
@@ -1507,32 +1508,58 @@ function desenharEfeitosPersonagem(ctx, p, dist, vel, tempo = 0) {
 }
 
 // Asa de penas (coordenadas da asa; pivô na cernelha). fundo = asa de trás, mais escura
-// ── Asa grande de pégaso: tufo fofo no ombro + 2 fileiras de penas longas em leque (para cima e para trás) ──
-// Coordenadas: ombro em (0,0). Cada pena é desenhada apontando para +x e girada para a sua direção.
+// ── Asa grande de pégaso (estilo da referência do usuário) ──
+// Estrutura: um "braço" sobe do ombro (0,0) em diagonal para trás até o "pulso"; ele é coberto por uma faixa
+// fofa de nuvem (gomos virados para trás); da borda de trás saem 2 fileiras de penas compridas e afinadas,
+// abrindo em leque: as de cima apontam para cima, as de baixo quase na horizontal, para trás.
 function caminhoPenaLonga(L, W) {
     const p = new Path2D();
-    p.moveTo(0, -W * 0.3);
-    p.bezierCurveTo(L * 0.35, -W * 0.8, L * 0.78, -W * 0.62, L - 1, -W * 0.12);   // lado de cima, cheio
-    p.quadraticCurveTo(L + 1.2, W * 0.12, L - 2.5, W * 0.3);                       // ponta arredondada
-    p.bezierCurveTo(L * 0.75, W * 0.6, L * 0.35, W * 0.62, 0, W * 0.3);
+    p.moveTo(0, -W * 0.4);
+    p.bezierCurveTo(L * 0.3, -W * 0.75, L * 0.72, -W * 0.6, L - 0.5, -W * 0.08);   // lado de cima
+    p.quadraticCurveTo(L + 0.8, W * 0.1, L - 2.2, W * 0.28);                        // ponta afinando (arredondada)
+    p.bezierCurveTo(L * 0.7, W * 0.62, L * 0.3, W * 0.62, 0, W * 0.4);             // lado de baixo
     p.closePath();
     return p;
 }
-// [x, y da raiz, direção em graus (180 = para trás, 270 = para cima), comprimento, largura]
-const PENAS_PRIMARIAS = [[-7, -22, 236, 40, 11.5], [-8, -18, 221, 46, 12], [-8, -13, 206, 46, 12], [-7, -8, 192, 42, 11.5], [-5, -4, 179, 35, 11]]
-    .map(([x, y, a, L, W]) => ({ x, y, a: a * Math.PI / 180, L, W, path: caminhoPenaLonga(L, W) }));
-const PENAS_SECUNDARIAS = [[-4, -18, 228, 26, 11], [-4, -13, 212, 29, 11], [-3, -8, 197, 28, 11], [-2, -3, 183, 24, 10.5]]
-    .map(([x, y, a, L, W]) => ({ x, y, a: a * Math.PI / 180, L, W, path: caminhoPenaLonga(L, W) }));
-// tufo fofo no ombro (base da asa), inclinado para trás, com a borda de trás em gomos de nuvem
+const ASA = {
+    braco: 30, anguloBraco: 250,      // comprimento e direção do braço (graus; 270 = para cima, 180 = para trás)
+    largTufo: 7,                      // meia-largura da faixa fofa
+    // fileira de trás (longas): de cima (pulso) para baixo (ombro)
+    prim: { n: 7, ang: [258, 194], L: [40, 33], W: 7.4, recuo: 6 },
+    // fileira da frente (médias)
+    sec: { n: 6, ang: [246, 198], L: [27, 22], W: 7, recuo: 5 }
+};
+const _dirBraco = [Math.cos(ASA.anguloBraco * Math.PI / 180), Math.sin(ASA.anguloBraco * Math.PI / 180)];
+const _normTras = [_dirBraco[1], -_dirBraco[0]];   // perpendicular ao braço, apontando para trás (lado das penas)
+const _noBraco = (f, recuo = 0) => [_dirBraco[0] * ASA.braco * f + _normTras[0] * recuo, _dirBraco[1] * ASA.braco * f + _normTras[1] * recuo];
+function _fileiraPenas(cfg, f0, f1) {
+    const out = [];
+    for (let i = 0; i < cfg.n; i++) {
+        const t = i / (cfg.n - 1), [x, y] = _noBraco(f0 + (f1 - f0) * t, cfg.recuo);
+        const L = cfg.L[0] + (cfg.L[1] - cfg.L[0]) * t, a = (cfg.ang[0] + (cfg.ang[1] - cfg.ang[0]) * t) * Math.PI / 180;
+        out.push({ x, y, a, L, W: cfg.W, path: caminhoPenaLonga(L, cfg.W) });
+    }
+    return out;
+}
+const PENAS_PRIMARIAS = _fileiraPenas(ASA.prim, 1.0, 0.12);
+const PENAS_SECUNDARIAS = _fileiraPenas(ASA.sec, 0.92, 0.08);
+// faixa fofa sobre o braço: frente lisa, 5 gomos de nuvem virados para trás
 const TUFO_ASA = (() => {
-    const c = new Path2D();
-    c.moveTo(4, 2);
-    c.bezierCurveTo(7, -7, 2, -18, -8, -22);           // frente, subindo para trás
-    c.quadraticCurveTo(-15, -22, -13, -17);            // topo
-    c.quadraticCurveTo(-18, -13, -13, -10);
-    c.quadraticCurveTo(-17, -5, -11, -3);
-    c.quadraticCurveTo(-12, 3, -4, 1);
-    c.quadraticCurveTo(-1, 5, 4, 2);
+    const c = new Path2D(), lt = ASA.largTufo, n = 3;
+    const pt = (f, r) => _noBraco(f, r);
+    let [x, y] = pt(0, -lt * 0.6); c.moveTo(x, y);
+    // frente (lado da cabeça), do ombro até o pulso
+    const [cx1, cy1] = pt(0.5, -lt * 1.2), [xt, yt] = pt(1.05, -lt * 0.2);
+    c.quadraticCurveTo(cx1, cy1, xt, yt);
+    // ponta arredondada no pulso
+    const [cpx, cpy] = pt(1.18, lt * 0.6), [xb, yb] = pt(1.0, lt);
+    c.quadraticCurveTo(cpx, cpy, xb, yb);
+    // gomos na borda de trás, descendo
+    for (let k = 1; k <= n; k++) {
+        const fa = 1 - (k - 0.5) / n, fb = 1 - k / n;
+        const [qx, qy] = pt(fa, lt * 2.4), [ex, ey] = pt(fb, lt * 0.7);
+        c.quadraticCurveTo(qx, qy, ex, ey);
+    }
     c.closePath();
     return c;
 })();
@@ -1549,8 +1576,8 @@ function coresAsa(pal) {
             meio: paraHex(misturar(lav, _BRANCO, 0.55)),          // faixa do meio
             brilho: paraHex(misturar(lav, _BRANCO, 0.85)),        // fio de luz no centro da pena
             tufoSombra: paraHex(misturar(lav, _BRANCO, 0.6)),
-            fundoPonta: paraHex(misturar(lav, _ROXO_SOMBRA, 0.35)),
-            fundoBase: paraHex(misturar(lav, _BRANCO, 0.35))
+            fundoPonta: paraHex(misturar(lav, _ROXO_SOMBRA, 0.12)),   // asa de trás: clara e lavanda (aparece por cima)
+            fundoBase: paraHex(misturar(lav, _BRANCO, 0.5))
         };
         _cacheCoresAsa.set(pal, c);
     }
@@ -1591,22 +1618,22 @@ function desenharAsa(ctx, pal, lw, angulo, fundo, tempo = 0) {
     // brilho mágico atrás da asa (só a da frente)
     if (!fundo) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        ctx.drawImage(spriteLuz('#B9A4FF'), -50, -55, 60, 60);
+        ctx.drawImage(spriteLuz('#B9A4FF'), -50, -62, 64, 64);
         ctx.restore();
     }
     // 1) penas longas (atrás), de baixo para cima: a de cima fica por cima
-    for (let i = PENAS_PRIMARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_PRIMARIAS[i], cores, cont, lw * 1.1, fundo);
+    for (let i = PENAS_PRIMARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_PRIMARIAS[i], cores, cont, lw * 0.9, fundo);
     // 2) penas curtas (na frente)
-    for (let i = PENAS_SECUNDARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_SECUNDARIAS[i], cores, cont, lw * 1.1, fundo);
+    for (let i = PENAS_SECUNDARIAS.length - 1; i >= 0; i--) desenharPenaAsa(ctx, PENAS_SECUNDARIAS[i], cores, cont, lw * 0.9, fundo);
     // 3) tufo fofo no ombro
     ctx.strokeStyle = cont; ctx.lineWidth = lw * 1.3; ctx.stroke(TUFO_ASA);
     ctx.fillStyle = fundo ? cores.fundoBase : '#FFFFFF'; ctx.fill(TUFO_ASA);
     ctx.save(); ctx.clip(TUFO_ASA);
     ctx.fillStyle = fundo ? cores.fundoPonta : cores.tufoSombra;
-    ctx.beginPath(); ctx.ellipse(-14, -10, 5, 14, 0.4, 0, Math.PI * 2); ctx.fill();   // sombra nos gomos de trás
+    { const [sx, sy] = _noBraco(0.5, ASA.largTufo * 1.3); ctx.beginPath(); ctx.ellipse(sx, sy, ASA.largTufo * 0.9, ASA.braco * 0.55, (ASA.anguloBraco - 90) * Math.PI / 180, 0, Math.PI * 2); ctx.fill(); }   // sombra nos gomos de trás
     ctx.restore();
     // 4) estrelinhas piscando nas pontas (pó mágico)
-    if (!fundo) {
+    {   // nas duas asas (a de trás também brilha)
         const img = spriteEstrelinha('#FFFFFF');
         for (let i = 0; i < 4; i++) {
             const pena = PENAS_PRIMARIAS[i];
