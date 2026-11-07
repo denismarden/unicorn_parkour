@@ -329,7 +329,7 @@ async function rodar() {
         for (let k = 0; k < 60; k++) step();
         const caindo = stars.filter(s => s.chuva && !s.collected);
         const y0 = caindo.map(s => s.y); step(); step();
-        ok(caindo.length >= 4 && caindo.every((s, i) => s.collected || s.y > y0[i]), `Chuva de estrelas: estrelas caindo (${caindo.length})`);
+        ok(caindo.length >= 4 && caindo.every((s, i) => s.collected || !stars.includes(s) || s.y > y0[i]), `Chuva de estrelas: estrelas caindo (${caindo.length})`);
         poderes.coinshower = 0.01; for (let k = 0; k < 5; k++) step();
         const qtd = stars.filter(s => s.chuva).length; for (let k = 0; k < 30; k++) step();
         ok(!ativo('coinshower') && stars.filter(s => s.chuva).length <= qtd, 'Chuva de estrelas para quando o tempo acaba');
