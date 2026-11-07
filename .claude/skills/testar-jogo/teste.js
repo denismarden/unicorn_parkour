@@ -286,6 +286,12 @@ async function rodar() {
         ok(JSON.stringify(lerJSON('uniparkourTesteRuim', [0], Array.isArray)) === '[0]', 'lerJSON recusa formato errado');
         localStorage.removeItem('uniparkourTesteRuim');
 
+        // power-ups: todos têm estilo; coletar mostra o nome do poder e estoura a bolha
+        ok(POWERUP_TYPES.concat('omni').every(t => ESTILOS_POWERUP[t] && ESTILOS_POWERUP[t].nome), 'todos os power-ups têm estilo e nome');
+        btnStart.click(); await espera(100); isPaused = true;
+        floatingTexts = [];
+        coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
+        ok(isMagnetActive && floatingTexts.some(f => f.text === ESTILOS_POWERUP.magnet.nome), 'coletar power-up ativa e mostra o nome');
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);

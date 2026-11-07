@@ -652,3 +652,8 @@ canvas.retrato { position: static; width: 140px; height: 104px; display: block; 
 .missao-linha .missao-rodape { margin-top: 2px; font-size: 0.75rem; }
 .missao-linha.feita { opacity: 0.6; }
 .missao-extra { margin-top: 8px; font-size: 0.8rem; text-align: center; color: #FFE08A; }
+
+/* Poder acabando: a pílula pisca para avisar (nos últimos 2 s) */
+.powerup-display.acabando { animation: poderAcabando 0.35s ease-in-out infinite alternate; }
+@keyframes poderAcabando { to { opacity: 0.35; border-color: #FFE08A; } }
+@media (prefers-reduced-motion: reduce) { .powerup-display.acabando { animation: none; border-color: #FFE08A; } }

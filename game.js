@@ -46,7 +46,9 @@ const MAX_PASSO_CORRIDA = 0.9;        // limite para as patas não "embaralharem
 const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance real do personagem
 const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.06;          // por plataforma (~2 power-ups por minuto)
-const CHANCE_OMNI = 0.02;             // por plataforma (no máximo 1 por fase)
+const AVISO_FIM_PODER = 2;            // s: a pílula do poder pisca quando falta isto
+const ATRACAO_POWERUP = 90;          // px: a bolha do power-up é puxada até o personagem a esta distância
+const CHANCE_OMNI =0.02;             // por plataforma (no máximo 1 por fase)
 const CONVERSAO_ESTRELAS = 0.5;       // fração das estrelas da partida que vai para a carteira
 const LARGURA_MIN_ESPINHO = 110;      // plataformas estreitas (fases finais) ainda podem ter espinho no meio
 const CHANCE_OBST_FASE1_VETERANO = 0.08; // depois de 3 partidas, a fase 1 já tem alguns obstáculos
@@ -794,6 +796,13 @@ function playSound(type, forca = 1) {
         osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
         gain.gain.setValueAtTime(0.2, now);
         gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+    } else if (type === 'powerup') {
+        // power-up: arpejo mágico subindo (dó-mi-sol-dó)
+        osc.type = 'triangle';
+        [523, 659, 784, 1047].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.055));
+        gain.gain.setValueAtTime(0.11, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
         osc.start(now); osc.stop(now + 0.3);
     } else if (type === 'land') {
         // pouso: "tum" curto e grave, mais alto quanto mais forte a queda
@@ -3141,71 +3150,107 @@ function drawStar(ctx, x, y, size, collected, t, starType) {
 
 function drawPowerupItem(ctx, pu, t, offsetX) {
     if (pu.collected) return;
+    const s = ESTILOS_POWERUP[pu.type];
+    // "pop" ao aparecer na tela: cresce passando um pouco do tamanho e assenta (~0,3 s)
+    if (pu.surgiu === undefined) pu.surgiu = frames;
+    const ks = Math.min(1, (frames - pu.surgiu) / 18);
+    const pop = ks < 1 ? Math.sin(ks * Math.PI * 0.5) * (1 + 0.25 * Math.sin(ks * Math.PI)) : 1;
+    const respira = 1 + Math.sin(t * 3) * 0.05;
     const x = pu.x - offsetX;
     const y = pu.y + Math.sin(t * 1.4) * 7;
     ctx.save();
     ctx.translate(x, y);
-
-    const s = ESTILOS_POWERUP[pu.type];
-    const r = s.r;
-    desenharPowerupInterno(ctx, s, r, t);
+    ctx.scale(pop * respira, pop * (2 - respira));   // respira: estica um pouco na vertical e na horizontal, alternando
+    desenharPowerupInterno(ctx, s, s.r, t);
     ctx.restore();
 }
 
+// Cores pastel do tema "noite mágica"; cat: poder (anel lilás), tesouro (anel dourado), lendario (arco-íris)
 const ESTILOS_POWERUP = {
-        magnet: { glow: '#ff44aa', label: '🧲', bg1: '#cc2288', bg2: '#ff88cc', r: 19 },
-        shield: { glow: '#44ccff', label: '🛡', bg1: '#0066aa', bg2: '#88ddff', r: 19 },
-        bonus: { glow: '#ffff00', label: '✨', bg1: '#aa8800', bg2: '#ffff44', r: 19 },
-        slowmo: { glow: '#00ffcc', label: '🌀', bg1: '#006644', bg2: '#44ffcc', r: 19 },
-        infjump: { glow: '#ff8800', label: '🦘', bg1: '#aa3300', bg2: '#ff8800', r: 19 },
-        shrink: { glow: '#ff0055', label: '🍄', bg1: '#880022', bg2: '#ff3377', r: 19 },
-        giant: { glow: '#44ff00', label: '🦖', bg1: '#116600', bg2: '#66ff44', r: 19 },
-        meteor: { glow: '#ff2200', label: '☄️', bg1: '#aa1100', bg2: '#ff5533', r: 19 },
-        rocket: { glow: '#ffffff', label: '🚀', bg1: '#555555', bg2: '#aaaaaa', r: 19 },
-        blackhole: { glow: '#8800ff', label: '🌌', bg1: '#330066', bg2: '#aa44ff', r: 19 },
-        lucky: { glow: '#00ffaa', label: '🍀', bg1: '#006644', bg2: '#44ffcc', r: 19 },
-        hover: { glow: '#00ccff', label: '🛸', bg1: '#004488', bg2: '#44aaff', r: 19 },
-        nogap: { glow: '#00ff00', label: '🌉', bg1: '#004400', bg2: '#00ff00', r: 19 },
-        starchest: { glow: '#ffd700', label: '📦', bg1: '#8b4500', bg2: '#ffd700', r: 22 },
-        coinshower: { glow: '#ffee00', label: '🌧️', bg1: '#aa8800', bg2: '#ffee00', r: 22 },
-        rainbow: { glow: '#ff00ff', label: '🌈', bg1: '#ff0000', bg2: '#0000ff', r: 22 },
-        jackpot: { glow: '#ffaa00', label: '🎰', bg1: '#bb6600', bg2: '#ffaa00', r: 22 },
-        omni: { glow: '#ffffff', label: '🌟', bg1: '#ff00ff', bg2: '#00ffff', r: 24 }
+    magnet: { cor: '#FF8CC6', label: '🧲', nome: 'Ímã!', cat: 'poder', r: 19 },
+    shield: { cor: '#8FE3FF', label: '🛡️', nome: 'Escudo!', cat: 'poder', r: 19 },
+    bonus: { cor: '#FFE08A', label: '✨', nome: 'Pontos x2!', cat: 'poder', r: 19 },
+    slowmo: { cor: '#8FF0D8', label: '🌀', nome: 'Câmera lenta!', cat: 'poder', r: 19 },
+    infjump: { cor: '#FFB27A', label: '🦘', nome: 'Pulo infinito!', cat: 'poder', r: 19 },
+    shrink: { cor: '#FF9CB0', label: '🍄', nome: 'Mini!', cat: 'poder', r: 19 },
+    giant: { cor: '#A8F07A', label: '🦖', nome: 'Gigante!', cat: 'poder', r: 19 },
+    meteor: { cor: '#FF8F6B', label: '☄️', nome: 'Meteoro!', cat: 'poder', r: 19 },
+    rocket: { cor: '#D9DEF0', label: '🚀', nome: 'Foguete!', cat: 'poder', r: 19 },
+    blackhole: { cor: '#B98CFF', label: '🌌', nome: 'Buraco negro!', cat: 'poder', r: 19 },
+    hover: { cor: '#8CC8FF', label: '🛸', nome: 'Flutuar!', cat: 'poder', r: 19 },
+    nogap: { cor: '#9BEF9B', label: '🌉', nome: 'Ponte!', cat: 'poder', r: 19 },
+    lucky: { cor: '#8FF0B8', label: '🍀', nome: 'Sorte!', cat: 'tesouro', r: 19 },
+    starchest: { cor: '#FFD27A', label: '📦', nome: 'Baú de estrelas!', cat: 'tesouro', r: 22 },
+    coinshower: { cor: '#FFE98A', label: '🌧️', nome: 'Chuva de estrelas!', cat: 'tesouro', r: 22 },
+    rainbow: { cor: '#FFB3E6', label: '🌈', nome: 'Arco-íris!', cat: 'tesouro', r: 22 },
+    jackpot: { cor: '#FFC56B', label: '🎰', nome: 'Jackpot!', cat: 'tesouro', r: 22 },
+    omni: { cor: '#FFFFFF', label: '🌟', nome: 'OMNI!', cat: 'lendario', r: 24 }
 };
+const COR_ANEL_PU = { poder: '#B9A4FF', tesouro: '#FFD54A', lendario: '#FFFFFF' };
+
+// Bolha de vidro do power-up, pré-desenhada uma vez por tipo (o emoji também: nada de texto por quadro)
+function spriteBolhaPowerup(s) {
+    const esc = 3, tam = Math.ceil(s.r * 2 * esc + 8);
+    return spriteCache('pu|' + s.label + '|' + s.r, tam, (g, T) => {
+        const m = T / 2, r = s.r * esc;
+        // interior: vidro escuro tingido com a cor do poder
+        const dentro = g.createRadialGradient(m - r * 0.35, m - r * 0.4, r * 0.1, m, m, r);
+        dentro.addColorStop(0, rgbaDe(corMix(s.cor, '#FFFFFF', 0.35), 0.95));
+        dentro.addColorStop(0.55, rgbaDe(corMix(s.cor, COR_NOITE, 0.45), 0.92));
+        dentro.addColorStop(1, rgbaDe(corMix(s.cor, COR_NOITE, 0.75), 0.95));
+        g.fillStyle = dentro; g.beginPath(); g.arc(m, m, r, 0, Math.PI * 2); g.fill();
+        // contorno escuro (padrão do jogo) + aro claro
+        g.lineWidth = 2.2 * esc; g.strokeStyle = PALETA.textoContorno;
+        g.beginPath(); g.arc(m, m, r, 0, Math.PI * 2); g.stroke();
+        g.lineWidth = 1.2 * esc; g.strokeStyle = rgbaDe(corMix(s.cor, '#FFFFFF', 0.5), 0.9);
+        g.beginPath(); g.arc(m, m, r - 1.6 * esc, 0, Math.PI * 2); g.stroke();
+        // ícone
+        g.font = `${Math.round(r * 1.05)}px 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(s.label, m, m + r * 0.06);
+        // reflexo do vidro por cima (arco claro no alto à esquerda + pontinho)
+        g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 2.2 * esc; g.lineCap = 'round';
+        g.beginPath(); g.arc(m, m, r * 0.72, Math.PI * 1.08, Math.PI * 1.42); g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.85)';
+        g.beginPath(); g.arc(m - r * 0.22, m - r * 0.68, 1.4 * esc, 0, Math.PI * 2); g.fill();
+    });
+}
 
 function desenharPowerupInterno(ctx, s, r, t) {
-    // Brilho pulsante (sprite, sem shadowBlur)
+    // brilho pulsante (sprite, sem shadowBlur)
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const tg = r * (3.2 + Math.sin(t * 2) * 0.4);
-    ctx.drawImage(spriteLuz(s.glow), -tg / 2, -tg / 2, tg, tg);
+    ctx.drawImage(spriteLuz(s.cat === 'lendario' ? `hsl(${(Math.round(t * 2) * 30) % 360},100%,75%)` : s.cor), -tg / 2, -tg / 2, tg, tg);
     ctx.restore();
 
-    // Background circle
-    ctx.fillStyle = gradCache(`pu|${s.bg1}|${s.bg2}|${r}`, () => {
-        let bg = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
-        bg.addColorStop(0, s.bg2);
-        bg.addColorStop(1, s.bg1);
-        return bg;
-    });
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
+    // anel da categoria girando (tracinhos), por fora da bolha
+    const corAnel = s.cat === 'lendario' ? `hsl(${(Math.round(t * 2) * 30) % 360},100%,75%)` : COR_ANEL_PU[s.cat];
+    ctx.save();
+    ctx.rotate(t * (s.cat === 'tesouro' ? -0.9 : 0.7));
+    ctx.strokeStyle = corAnel; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    const n = s.cat === 'poder' ? 6 : 8;
+    for (let i = 0; i < n; i++) {
+        const a = i * Math.PI * 2 / n;
+        ctx.beginPath(); ctx.arc(0, 0, r + 5, a, a + Math.PI / n * 0.9); ctx.stroke();
+    }
+    ctx.restore();
 
-    // Bright rim
-    ctx.strokeStyle = s.glow;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
-    ctx.stroke();
+    // bolha com o ícone (balança de leve)
+    const b = spriteBolhaPowerup(s), tam = r * 2 + 8 / 3;
+    ctx.save();
+    ctx.rotate(Math.sin(t * 2.2) * 0.12);
+    ctx.drawImage(b, -tam / 2, -tam / 2, tam, tam);
+    ctx.restore();
 
-    ctx.shadowBlur = 0;
-
-    // Emoji icon
-    ctx.font = `bold ${Math.round(r * 1.1)}px serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(s.label, 0, 1);
+    // brilhinhos em órbita (tesouros e lendário têm mais)
+    const img = spriteEstrelinha(s.cat === 'poder' ? '#FFFFFF' : '#FFE08A');
+    const nb = s.cat === 'poder' ? 2 : 3;
+    for (let i = 0; i < nb; i++) {
+        const a = t * 1.8 + i * Math.PI * 2 / nb, rr = r + 9;
+        const tb = 7 + 3 * Math.sin(t * 4 + i);
+        ctx.drawImage(img, Math.cos(a) * rr - tb / 2, Math.sin(a) * rr * 0.6 - tb / 2, tb, tb);
+    }
 }
 
 // Draws the shield ring around the player when shield is active
@@ -3247,14 +3292,24 @@ function drawMagnetField(ctx, p) {
     let cx = p.x + p.w / 2;
     let cy = p.y + p.h / 2;
     ctx.save();
-    ctx.strokeStyle = isMagnetActive ? 'rgba(255,100,180,0.2)' : 'rgba(255,215,0,0.1)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 8]);
-    ctx.lineDashOffset = -(frames * 1.2);
-    ctx.beginPath();
-    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (isMagnetActive) {
+        // ímã ativo: 3 ondas rosa que se fecham no personagem (mostram o "puxão")
+        ctx.strokeStyle = '#FF8CC6';
+        for (let i = 0; i < 3; i++) {
+            const k = ((frames * 0.012) + i / 3) % 1;          // 0 = borda, 1 = chegou no personagem
+            ctx.globalAlpha = 0.35 * Math.sin(k * Math.PI);
+            ctx.lineWidth = 1 + 2 * k;
+            ctx.beginPath(); ctx.arc(cx, cy, rad * (1 - k) + 20 * k, 0, Math.PI * 2); ctx.stroke();
+        }
+    } else {
+        // ímã natural do personagem: círculo pontilhado discreto
+        ctx.strokeStyle = 'rgba(255,215,0,0.1)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 8]);
+        ctx.lineDashOffset = -(frames * 1.2);
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+    }
     ctx.restore();
 }
 
@@ -3421,6 +3476,9 @@ function passoTimer(ativo, tempo, display, timerEl, dt) {
     if (!ativo) return [false, 0];
     tempo -= dt;
     setTexto(timerEl, Math.max(0, tempo).toFixed(1) + 's');
+    // pílula pisca nos últimos 2 s (avisa que o poder vai acabar); só mexe no DOM quando muda
+    const acabando = tempo > 0 && tempo < AVISO_FIM_PODER;
+    if (display._acabando !== acabando) { display._acabando = acabando; display.classList.toggle('acabando', acabando); }
     if (tempo <= 0) { display.classList.add('hidden'); return [false, 0]; }
     return [true, tempo];
 }
@@ -3739,7 +3797,10 @@ function step() {
     for (let pu of powerupItems) {
         if (pu.collected) continue;
         let dx = pCX - pu.x; let dy = pCY - pu.y;
-        if (Math.hypot(dx, dy) < player.w / 2 + pu.size) {
+        const d = Math.hypot(dx, dy);
+        // perto do personagem a bolha é "puxada" até ele (a coleta fica gostosa, sem raspar de leve e errar)
+        if (d < ATRACAO_POWERUP && d > 0) { const v = Math.min(d, 7); pu.x += dx / d * v; pu.y += dy / d * v; }
+        if (d < player.w / 2 + pu.size) {
             pu.collected = true;
             coletarPowerup(pu);
         }
@@ -3959,7 +4020,6 @@ function destruirObstaculo(ob) {
 }
 
 function coletarPowerup(pu) {
-    let burstCol = '#ffffff';
     let pDur = (player.char.powerupDurMult || 1.0) * (1 + ((unlockedUpgrades.pu_time || 0) * 0.1));
     const pm = player.char.pointsMult || 1.0;
     player.sorriso = 60;
@@ -3968,34 +4028,34 @@ function coletarPowerup(pu) {
         case 'magnet':
             isMagnetActive = true; magnetTimeLeft = 8 * pDur;
             magnetDisplay.classList.remove('hidden');
-            burstCol = '#ff66aa'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'shield':
             isShieldActive = true;
             if (shieldTimeLeft < 9000) shieldTimeLeft = DURACAO_ESCUDO * pDur; // não encurta o escudo inicial infinito
             shieldDisplay.classList.remove('hidden');
-            burstCol = '#44ccff'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'bonus':
             isBonusActive = true; bonusTimeLeft = 8 * pDur;
             bonusDisplay.classList.remove('hidden');
-            burstCol = '#ffff00'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'slowmo':
             isSlowMoActive = true; slowMoTimeLeft = 5 * pDur;
             slowmoDisplay.classList.remove('hidden');
-            burstCol = '#88ffff'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'infjump':
             isInfJumpActive = true; infJumpTimeLeft = 10 * pDur;
             infjumpDisplay.classList.remove('hidden');
-            burstCol = '#ffaa00'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'starchest': {
             // Baú: 5 estrelas de tipos sorteados de verdade + bônus de pontos
             let chestLuckyM = isLuckyActive ? (5 + ((unlockedUpgrades.lucky_mult || 0) * 2)) : 1;
             score += (isBonusActive ? 1000 : 500) * chestLuckyM * pm;
-            burstCol = '#ffd700';
+           
             for (let i = 0; i < 5; i++) {
                 const st = pickStarType();
                 stars.push({ x: pu.x + (Math.random() - 0.5) * 60, y: pu.y - Math.random() * 40, size: st.size, starType: st, collected: false, oscOffset: Math.random() * Math.PI * 2 });
@@ -4004,39 +4064,39 @@ function coletarPowerup(pu) {
         }
         case 'shrink':
             isShrinkActive = true; shrinkTimeLeft = 8 * pDur; shrinkDisplay.classList.remove('hidden');
-            burstCol = '#ff0055'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'giant':
             isGiantActive = true; giantTimeLeft = 8 * pDur; giantDisplay.classList.remove('hidden');
-            burstCol = '#44ff00'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'meteor':
             isMeteorActive = true; meteorTimeLeft = 8 * pDur; meteorDisplay.classList.remove('hidden');
-            burstCol = '#ff2200'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'rocket':
             isRocketActive = true; rocketTimeLeft = 5 * pDur; rocketDisplay.classList.remove('hidden');
-            burstCol = '#ffffff'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'blackhole':
             isBlackHoleActive = true; blackholeTimeLeft = 6 * pDur; blackholeDisplay.classList.remove('hidden');
-            burstCol = '#8800ff'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'lucky':
             isLuckyActive = true; luckyTimeLeft = 8 * pDur; luckyDisplay.classList.remove('hidden');
-            burstCol = '#00ffaa'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'hover':
             isHoverActive = true; hoverTimeLeft = 8 * pDur; hoverDisplay.classList.remove('hidden');
-            burstCol = '#00ccff'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'nogap':
             isNoGapActive = true; noGapTimeLeft = 15 * pDur; nogapDisplay.classList.remove('hidden');
-            burstCol = '#00ff00'; score += 80 * pm;
+            score += 80 * pm;
             break;
         case 'coinshower':
             score += 500 * pm;
-            burstCol = '#ffee00';
+           
             // Estrelas à frente do jogador (no mundo) para ele passar por elas
             for (let i = 0; i < 20; i++) {
                 let st = pickStarType();
@@ -4052,12 +4112,12 @@ function coletarPowerup(pu) {
             break;
         case 'rainbow':
             score += 500 * pm;
-            burstCol = '#ff00ff';
+           
             rainbowPlatformsCount = 10; // as próximas 10 plataformas não têm vão
             break;
         case 'jackpot':
             score += 5000 * pm;
-            burstCol = '#ffaa00';
+           
             break;
         case 'omni':
             isMagnetActive = true; magnetTimeLeft = 10 * pDur; magnetDisplay.classList.remove('hidden');
@@ -4067,11 +4127,22 @@ function coletarPowerup(pu) {
             isFlying = true; flightTimeLeft = 10 * pDur; powerupDisplay.classList.remove('hidden');
             player.jumps = 0;
             score += 1000 * pm;
-            burstCol = '#ffffff';
+           
             for (let i = 0; i < 18; i++) emitirParticula({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20, life: 1.5, color: PALETA.particulas[i % 5], size: Math.random() * 5 + 5, forma: 'brilho' });
             break;
     }
-    for (let i = 0; i < 12; i++) emitirParticula({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12, life: 1.2, color: burstCol, size: Math.random() * 4 + 4, forma: 'brilho' });
+    // estouro da bolha: anel grande + brilhos em círculo na cor do poder + o nome do poder subindo
+    const est = ESTILOS_POWERUP[pu.type] || ESTILOS_POWERUP.magnet;
+    const cx = pu.x - distance, cy = pu.y;
+    aneis.push({ x: cx, y: cy, cor: est.cor, t: 0, raio: 55 });
+    aneis.push({ x: cx, y: cy, cor: '#FFFFFF', t: -3, raio: 35 });
+    for (let i = 0; i < 14; i++) {
+        const a = i / 14 * Math.PI * 2, v = 5 + Math.random() * 3;
+        emitirParticula({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.1, color: i % 3 ? est.cor : '#FFFFFF', size: 5 + Math.random() * 3, forma: 'brilho' });
+    }
+    floatingTexts.push({ x: cx, y: cy - 30, text: est.nome, life: 1.2, color: corMix(est.cor, COR_NOITE, 0.55), escala: est.cat === 'poder' ? 1.05 : 1.3 });
+    player.scaleY = 1.18; player.sqV = 0;   // o personagem "estica" de alegria
+    playSound('powerup');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
