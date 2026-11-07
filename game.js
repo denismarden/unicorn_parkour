@@ -50,7 +50,7 @@ const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance re
 const DURACAO_PODER = {
     magnet: 15, shield: 25, bonus: 15, slowmo: 9, infjump: 18, shrink: 12, giant: 12, meteor: 12,
     rocket: 8, blackhole: 10, lucky: 15, hover: 14, nogap: 20, voo: 18, omni: 18,
-    estrelax2: 15, fantasma: 10, mola: 12, gelo: 14, bolha: 25, cometa: 10, dashinf: 12, superpulo: 12, laser: 12, fada: 15,
+    estrelax2: 15, fantasma: 10, mola: 12, gelo: 14, bolha: 25, cometa: 10, dashinf: 12, superpulo: 12, laser: 12, fada: 30,
     coinshower: 10   // Chuva de estrelas
 };
 const DURACAO_ESCUDO = DURACAO_PODER.shield;   // s (escudo coletado como power-up)
