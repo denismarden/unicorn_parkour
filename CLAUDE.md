@@ -38,6 +38,9 @@ Tema visual: "noite mágica" (céu roxo/azul escuro, aurora, estrelas) + platafo
   `Upgrades`, `PUDur`, `MissoesDia` (3 missões do dia + baú), `Sequencia` (dias seguidos), `Recorde`, `Partidas`, `Muted`
   (`Mission` é a missão antiga, não usada). Nunca renomear chaves: o progresso dos jogadores se perderia.
   Ler sempre com `lerJSON(chave, padrão, validação)`: save corrompido não pode derrubar o jogo.
+- **Power-ups**: catálogo em `POWERUP_TYPES` + `PESO_POWERUP` (raridade) + `ESTILOS_POWERUP` (bolha, nome) + `DURACAO_PODER`.
+  Os antigos têm variáveis próprias (`isMagnetActive`...); os novos usam o sistema genérico `PODERES_NOVOS`/`poderes`/`ativo(id)`
+  (pílula do HUD criada sozinha). Poder novo com duração: entrar em `PODERES_NOVOS` e tratar o efeito com `ativo(id)`.
 - **Placar online**: Firebase REST (`URL_PLACAR`); o jogo só ADICIONA recordes (as regras proíbem apagar/alterar).
 
 ## Como rodar e testar

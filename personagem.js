@@ -963,7 +963,8 @@ let _camada = null, _camadaCtx = null;
 function desenharUnicornio(ctx, x, y, p, tempo, escala) {
     const pal = paletaDe(p.char);
     const dano = estadoDano(p);
-    if (pal.alfa >= 1 && !dano.flash && dano.alfa >= 1) {
+    const alfaExtra = p.alfaExtra === undefined ? 1 : p.alfaExtra;   // poder Fantasma: translúcido
+    if (pal.alfa >= 1 && !dano.flash && dano.alfa >= 1 && alfaExtra >= 1) {
         desenharUnicornioDireto(ctx, x, y, p, tempo, escala, pal, dano);
         return;
     }
@@ -988,7 +989,7 @@ function desenharUnicornio(ctx, x, y, p, tempo, escala) {
         o.globalCompositeOperation = 'source-over';
     }
     ctx.save();
-    ctx.globalAlpha *= dano.alfa * (pal.alfa < 1 ? 0.75 : 1);
+    ctx.globalAlpha *= dano.alfa * (pal.alfa < 1 ? 0.75 : 1) * alfaExtra;
     ctx.drawImage(_camada, 0, 0, px, px, x + p.w / 2 - tam / 2, y + p.h / 2 - tam / 2, tam, tam);
     ctx.restore();
 }

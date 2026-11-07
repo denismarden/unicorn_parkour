@@ -26,6 +26,8 @@ const MOLA_RIGIDEZ = 0.22, MOLA_AMORTECIMENTO = 0.28;   // squash & stretch: for
 const ESTICADA_SLAM = 1.18;           // escala vertical durante o slam (desce "esticado")
 const SUAVIZACAO_POSE_AR = 0.35;      // quanto a pose das patas no ar anda por passo até a nova pose
 const ATRASO_CABELO = 0.14;           // crina/cauda seguem a subida/queda com atraso (menor = mais atraso)
+const FORCA_SUPERPULO = 1.3;          // Super pulo: multiplica a força do pulo
+const FORCA_MOLA = 1.1;               // Mola: força do quique automático (× pulo normal)
 const BUFFER_DASH = 0.15;            // s — dash apertado até 0,15 s antes de recarregar não se perde
 const BONUS_VEL_DASH = 25;            // velocidade extra durante o dash
 const ACELERACAO_JOGO = 0.0004;       // aumento da velocidade alvo a cada passo
@@ -47,7 +49,8 @@ const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance re
 // Duração de cada poder (segundos, antes dos bônus de personagem e do poder "Maestria Arcana")
 const DURACAO_PODER = {
     magnet: 15, shield: 25, bonus: 15, slowmo: 9, infjump: 18, shrink: 12, giant: 12, meteor: 12,
-    rocket: 8, blackhole: 10, lucky: 15, hover: 14, nogap: 20, voo: 18, omni: 18
+    rocket: 8, blackhole: 10, lucky: 15, hover: 14, nogap: 20, voo: 18, omni: 18,
+    estrelax2: 15, fantasma: 10, mola: 12, gelo: 14, bolha: 25, cometa: 10, dashinf: 12, superpulo: 12, laser: 12, fada: 15
 };
 const DURACAO_ESCUDO = DURACAO_PODER.shield;   // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.06;          // por plataforma (~2 power-ups por minuto)
@@ -1498,6 +1501,7 @@ function initGame() {
     isLuckyActive = false; luckyTimeLeft = 0;
     isHoverActive = false; hoverTimeLeft = 0;
     isNoGapActive = false; noGapTimeLeft = 0;
+    if (typeof zerarPoderesNovos === "function") zerarPoderesNovos();
     rainbowPlatformsCount = 0;
     omniSpawnedThisPhase = false;
     usedFreeRevive = false;
@@ -1615,9 +1619,11 @@ function alcanceDoPulo(subida) {
     return { distancia: passos * vel + folgaHitbox, alturaMax };
 }
 
-const POWERUP_TYPES = ['magnet', 'shield', 'bonus', 'slowmo', 'infjump', 'starchest', 'shrink', 'giant', 'meteor', 'rocket', 'blackhole', 'lucky', 'hover', 'coinshower', 'rainbow', 'jackpot', 'nogap'];
+const POWERUP_TYPES = ['magnet', 'shield', 'bonus', 'slowmo', 'infjump', 'starchest', 'shrink', 'giant', 'meteor', 'rocket', 'blackhole', 'lucky', 'hover', 'coinshower', 'rainbow', 'jackpot', 'nogap',
+    'estrelax2', 'fantasma', 'mola', 'gelo', 'bolha', 'cometa', 'dashinf', 'superpulo', 'laser', 'fada', 'presente', 'relogio'];
 // Raridade dos power-ups: úteis e comuns saem mais; os de economia (baú, chuva, jackpot) são raros
-const PESO_POWERUP = { magnet: 10, shield: 8, bonus: 8, slowmo: 6, infjump: 6, hover: 6, nogap: 5, rainbow: 5, shrink: 5, giant: 5, meteor: 4, rocket: 4, blackhole: 3, lucky: 3, starchest: 3, coinshower: 3, jackpot: 1 };
+const PESO_POWERUP = { magnet: 10, shield: 8, bonus: 8, slowmo: 6, infjump: 6, hover: 6, nogap: 5, rainbow: 5, shrink: 5, giant: 5, meteor: 4, rocket: 4, blackhole: 3, lucky: 3, starchest: 3, coinshower: 3, jackpot: 1,
+    estrelax2: 4, fantasma: 5, mola: 5, gelo: 5, bolha: 6, cometa: 4, dashinf: 5, superpulo: 6, laser: 4, fada: 4, presente: 4, relogio: 3 };
 const PESO_POWERUP_TOTAL = POWERUP_TYPES.reduce((s, t) => s + (PESO_POWERUP[t] || 1), 0);
 function sortearPowerup() {
     let r = Math.random() * PESO_POWERUP_TOTAL;
@@ -1830,7 +1836,7 @@ function jump() {
 
     if (player.jumps < player.maxJumps || isInfJumpActive || isHoverActive) {
         const noAr = !player.onGround && player.coyote <= 0;
-        player.vy = player.jumpPower;
+        player.vy = player.jumpPower * (ativo('superpulo') ? FORCA_SUPERPULO : 1);
         player.jumps++;
         player.onGround = false;
         player.coyote = 0;
@@ -1896,6 +1902,7 @@ function doDash() {
     isDashing = true;
     dashTimeLeft = DURACAO_DASH;
     dashCooldown = recargaDashTotal = RECARGA_DASH * (1 - ((unlockedUpgrades.dash_cd || 0) * 0.15));
+    if (ativo('dashinf')) dashCooldown = DURACAO_DASH + 0.05;   // Dash infinito: pronto de novo assim que este acaba
     isSlamming = false; // o dash cancela o slam (e o bônus dele)
     player.vy = 0;      // trava a altura já no primeiro passo
     // estouro de ar atrás do personagem
@@ -3189,6 +3196,18 @@ const ESTILOS_POWERUP = {
     coinshower: { cor: '#FFE98A', label: '🌧️', nome: 'Chuva de estrelas!', cat: 'tesouro', r: 27 },
     rainbow: { cor: '#FFB3E6', label: '🌈', nome: 'Arco-íris!', cat: 'tesouro', r: 27 },
     jackpot: { cor: '#FFC56B', label: '🎰', nome: 'Jackpot!', cat: 'tesouro', r: 27 },
+    estrelax2: { cor: '#FFE08A', label: '⭐', nome: 'Estrelas x2!', cat: 'tesouro', r: 27 },
+    fantasma: { cor: '#E4DCFF', label: '👻', nome: 'Fantasma!', cat: 'poder', r: 24 },
+    mola: { cor: '#FFB27A', label: '🪀', nome: 'Mola!', cat: 'poder', r: 24 },
+    gelo: { cor: '#BFEFFF', label: '❄️', nome: 'Congelar!', cat: 'poder', r: 24 },
+    bolha: { cor: '#9BE7FF', label: '🫧', nome: 'Bolha salva-vidas!', cat: 'poder', r: 24 },
+    cometa: { cor: '#FFD27A', label: '🌠', nome: 'Chuva de cometas!', cat: 'tesouro', r: 27 },
+    dashinf: { cor: '#9BE7FF', label: '💨', nome: 'Dash infinito!', cat: 'poder', r: 24 },
+    superpulo: { cor: '#A8F07A', label: '🐸', nome: 'Super pulo!', cat: 'poder', r: 24 },
+    laser: { cor: '#FFE08A', label: '⚡', nome: 'Raio!', cat: 'poder', r: 24 },
+    fada: { cor: '#FFB3E6', label: '🧚', nome: 'Fadinha!', cat: 'tesouro', r: 27 },
+    presente: { cor: '#FF9CCB', label: '🎁', nome: 'Presente!', cat: 'tesouro', r: 27 },
+    relogio: { cor: '#B9A4FF', label: '⏰', nome: 'Relógio +6s!', cat: 'poder', r: 24 },
     omni: { cor: '#FFFFFF', label: '🌟', nome: 'OMNI!', cat: 'lendario', r: 30 }
 };
 const COR_ANEL_PU = { poder: '#B9A4FF', tesouro: '#FFD54A', lendario: '#FFFFFF' };
@@ -3395,6 +3414,205 @@ function desenharVinhetaPoder(ctx) {
     });
     ctx.fillRect(0, 0, cw, ch);
     if (isSlowMoActive) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(120,220,255,0.07)'; ctx.fillRect(0, 0, cw, ch); }
+    ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PODERES NOVOS — sistema genérico: estado numa tabela, pílula do HUD criada sozinha
+// ─────────────────────────────────────────────────────────────────────────
+const PODERES_NOVOS = ['estrelax2', 'fantasma', 'mola', 'gelo', 'bolha', 'cometa', 'dashinf', 'superpulo', 'laser', 'fada'];
+const LASER_ALCANCE = 380;            // px à frente: o Raio destrói obstáculos até esta distância
+const FADA_ALCANCE = 300;             // px: a Fadinha busca estrelas até esta distância do personagem
+const poderes = {};                   // id → segundos restantes
+const ativo = (id) => (poderes[id] || 0) > 0;
+const _pilulas = {};
+
+function pilulaPoder(id) {
+    let el = _pilulas[id];
+    if (!el) {
+        const s = ESTILOS_POWERUP[id];
+        el = document.createElement('div');
+        el.className = 'powerup-display hidden';
+        el.textContent = `${s.label} ${s.nome.replace('!', '')}: `;
+        el._tempo = document.createElement('span');
+        el.appendChild(el._tempo);
+        document.querySelector('.hud-powerups').appendChild(el);
+        _pilulas[id] = el;
+    }
+    return el;
+}
+function ativarPoder(id, seg) {
+    poderes[id] = Math.max(poderes[id] || 0, seg);
+    pilulaPoder(id).classList.remove('hidden');
+    if (id === 'fada' && !fada) fada = { x: player.x - 30, y: player.y - 40, alvo: null, cd: 0 };
+}
+function zerarPoderesNovos() {
+    for (const id in poderes) poderes[id] = 0;
+    for (const id in _pilulas) { const el = _pilulas[id]; el.classList.add('hidden'); el.classList.remove('acabando'); el._acabando = false; }
+    fada = null; raios.length = 0; recargaLaser = 0;
+}
+// Relógio: soma segundos em todos os poderes ativos (antigos e novos)
+function estenderPoderes(s) {
+    let algum = false;
+    const soma = (ativoX) => { if (ativoX) algum = true; return ativoX ? s : 0; };
+    flightTimeLeft += soma(isFlying); magnetTimeLeft += soma(isMagnetActive);
+    if (isShieldActive && shieldTimeLeft < 9000) shieldTimeLeft += soma(true);
+    bonusTimeLeft += soma(isBonusActive); slowMoTimeLeft += soma(isSlowMoActive); infJumpTimeLeft += soma(isInfJumpActive);
+    shrinkTimeLeft += soma(isShrinkActive); giantTimeLeft += soma(isGiantActive); meteorTimeLeft += soma(isMeteorActive);
+    rocketTimeLeft += soma(isRocketActive); blackholeTimeLeft += soma(isBlackHoleActive); luckyTimeLeft += soma(isLuckyActive);
+    hoverTimeLeft += soma(isHoverActive); noGapTimeLeft += soma(isNoGapActive);
+    for (const id of PODERES_NOVOS) if (ativo(id)) { poderes[id] += s; algum = true; }
+    return algum;
+}
+
+// 1 vez por passo de física
+function passoPoderesNovos(dt) {
+    for (const id of PODERES_NOVOS) {
+        if (!(poderes[id] > 0)) continue;
+        poderes[id] -= dt;
+        const el = pilulaPoder(id);
+        setTexto(el._tempo, Math.max(0, poderes[id]).toFixed(1) + 's');
+        const acabando = poderes[id] > 0 && poderes[id] < AVISO_FIM_PODER;
+        if (el._acabando !== acabando) { el._acabando = acabando; el.classList.toggle('acabando', acabando); }
+        if (poderes[id] <= 0) { poderes[id] = 0; el.classList.add('hidden'); if (id === 'fada') fada = null; }
+    }
+    player.alfaExtra = ativo('fantasma') ? 0.45 : 1;
+    // Chuva de cometas: estrelas caem do céu à frente do personagem
+    if (ativo('cometa') && frames % 9 === 0) {
+        const st = pickStarType();
+        const yAlvo = ch * (0.15 + Math.random() * 0.45);
+        stars.push({ x: distance + cw * (0.45 + Math.random() * 0.6), y: -30, cai: yAlvo + 30, size: st.size, starType: st, collected: false, oscOffset: Math.random() * 6.28 });
+    }
+    if (ativo('laser')) passoLaser();
+    for (let i = raios.length - 1; i >= 0; i--) if (--raios[i].t <= 0) raios.splice(i, 1);
+    if (fada) passoFada();
+}
+
+// ── Raio: o chifre dispara em obstáculos à frente ──
+const raios = [];                     // {x1, y1, x2, y2, t}
+let recargaLaser = 0;
+function passoLaser() {
+    if (recargaLaser > 0) { recargaLaser--; return; }
+    const frente = distance + player.x + player.w;
+    let alvo = null;
+    for (const ob of obstaculos) {
+        if (ob.destruido || ob.x < frente || ob.x > frente + LASER_ALCANCE) continue;
+        if (!alvo || ob.x < alvo.x) alvo = ob;
+    }
+    if (!alvo) return;
+    const chifre = pontoLocalNaTela(player, 8.2, -23, 1.3);
+    raios.push({ x1: chifre.x, y1: chifre.y, x2: alvo.x - distance + alvo.w / 2, y2: alvo.plat.y - alvo.h / 2, t: 14 });
+    destruirObstaculo(alvo);
+    recargaLaser = 24;
+    screenShake = Math.max(screenShake, 5);
+    playSound('dash');
+}
+function desenharRaios(ctx) {
+    if (!raios.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (const r of raios) {
+        const k = r.t / 14;
+        for (const [larg, cor] of [[9, `rgba(255,224,138,${0.35 * k})`], [3, `rgba(255,255,240,${k})`]]) {
+            ctx.strokeStyle = cor; ctx.lineWidth = larg;
+            ctx.beginPath(); ctx.moveTo(r.x1, r.y1);
+            for (let i = 1; i < 6; i++) {
+                const f = i / 6, desvio = (i % 2 ? 1 : -1) * 9 * Math.sin(r.t * 1.7 + i);
+                ctx.lineTo(r.x1 + (r.x2 - r.x1) * f, r.y1 + (r.y2 - r.y1) * f + desvio);
+            }
+            ctx.lineTo(r.x2, r.y2); ctx.stroke();
+        }
+        ctx.drawImage(spriteLuz('#FFE08A'), r.x2 - 30 * k, r.y2 - 30 * k, 60 * k, 60 * k);
+    }
+    ctx.restore();
+}
+
+// ── Fadinha: segue o personagem e busca estrelas por perto ──
+let fada = null;                      // {x, y, alvo, cd} em coordenadas de tela
+function passoFada() {
+    let tx, ty;
+    if (fada.alvo && !fada.alvo.collected) { tx = fada.alvo.x - distance; ty = fada.alvo.y; }
+    else { fada.alvo = null; tx = player.x - 26 + Math.sin(frames * 0.05) * 8; ty = player.y - 36 + Math.sin(frames * 0.09) * 6; }
+    const k = fada.alvo ? 0.25 : 0.12;
+    fada.x += (tx - fada.x) * k; fada.y += (ty - fada.y) * k;
+    if (fada.alvo && Math.hypot(tx - fada.x, ty - fada.y) < 16) { coletarEstrela(fada.alvo); fada.alvo = null; fada.cd = 8; }
+    if (!fada.alvo && --fada.cd <= 0) {
+        let melhor = null, md = FADA_ALCANCE;
+        for (const s of stars) {
+            if (s.collected || s.cai > 0) continue;
+            const d = Math.hypot(s.x - distance - player.x, s.y - player.y);
+            if (d < md) { md = d; melhor = s; }
+        }
+        fada.alvo = melhor; fada.cd = 6;
+    }
+    if (frames % 3 === 0) emitirParticula({ x: fada.x, y: fada.y + 4, vx: -1.2, vy: 0.5, life: 0.6, size: 7, forma: 'brilho', color: frames % 2 ? '#FFB3E6' : '#FFFFFF' });
+}
+function desenharFada(ctx) {
+    if (!fada) return;
+    const x = fada.x, y = fada.y, bate = Math.sin(frames * 0.6);
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(1.4, 1.4); ctx.translate(-x, -y);   // fadinha 40% maior
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(spriteLuz('#FFB3E6'), x - 26, y - 26, 52, 52);
+    ctx.globalCompositeOperation = 'source-over';
+    // asinhas transparentes batendo
+    ctx.fillStyle = 'rgba(220,240,255,0.75)'; ctx.strokeStyle = '#7A5AB8'; ctx.lineWidth = 1.2;
+    for (const lado of [-1, 1]) {
+        ctx.save(); ctx.translate(x - 2, y - 3); ctx.rotate(lado * (0.5 + 0.4 * bate));
+        ctx.beginPath(); ctx.ellipse(0, -7, 4, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+    }
+    // corpinho e cabeça
+    ctx.fillStyle = '#FF9CCB'; ctx.strokeStyle = PALETA.textoContorno; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x - 4, y + 9); ctx.quadraticCurveTo(x, y - 2, x + 4, y + 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#FFE7D6';
+    ctx.beginPath(); ctx.arc(x, y - 2, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PALETA.textoContorno;
+    ctx.beginPath(); ctx.arc(x + 1.5, y - 2.5, 0.9, 0, Math.PI * 2); ctx.fill();
+    // varinha com estrelinha
+    ctx.strokeStyle = '#FFE08A'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(x + 3, y + 3); ctx.lineTo(x + 9, y - 3); ctx.stroke();
+    ctx.drawImage(spriteEstrelinha('#FFE08A'), x + 5, y - 8, 9, 9);
+    ctx.restore();
+}
+
+// Visuais contínuos dos poderes novos no personagem
+function desenharPoderesNovos(ctx) {
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2, pe = player.y + player.h;
+    ctx.save();
+    if (ativo('bolha')) {
+        // bolha de sabão em volta (é o salva-vidas)
+        const r = 44 + Math.sin(frames * 0.1) * 2;
+        ctx.fillStyle = 'rgba(155,231,255,0.10)'; ctx.strokeStyle = 'rgba(200,240,255,0.8)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,156,203,0.5)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(cx, cy, r - 3, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath(); ctx.ellipse(cx - r * 0.45, cy - r * 0.5, 5, 3, -0.6, 0, Math.PI * 2); ctx.fill();
+    }
+    if (ativo('mola')) {
+        // molinha embaixo das patas
+        ctx.strokeStyle = '#FFB27A'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+        const comp = player.onGround ? 6 : 12 + Math.sin(frames * 0.4) * 3;
+        ctx.beginPath();
+        for (let i = 0; i <= 8; i++) ctx.lineTo(cx + (i % 2 ? 8 : -8), pe + (i / 8) * comp);
+        ctx.stroke();
+    }
+    if (ativo('superpulo') && !player.onGround && frames % 2 === 0) {
+        emitirParticula({ x: cx + (Math.random() - 0.5) * 20, y: pe, vx: 0, vy: 2, life: 0.5, size: 8, forma: 'brilho', color: '#A8F07A' });
+    }
+    if (ativo('dashinf')) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(spriteLuz('#9BE7FF'), cx - 55, cy - 45, 110, 90);
+    }
+    if (ativo('estrelax2')) {
+        ctx.globalCompositeOperation = 'lighter';
+        const img = spriteEstrelinha('#FFE08A');
+        for (let i = 0; i < 3; i++) {
+            const a = frames * 0.07 + i * 2.09;
+            ctx.drawImage(img, cx + Math.cos(a) * 40 - 6, cy + Math.sin(a) * 26 - 6, 12, 12);
+        }
+    }
     ctx.restore();
 }
 
@@ -3701,6 +3919,7 @@ function step() {
     [isLuckyActive, luckyTimeLeft] = passoTimer(isLuckyActive, luckyTimeLeft, luckyDisplay, luckyTimerDisplay, dt);
     [isHoverActive, hoverTimeLeft] = passoTimer(isHoverActive, hoverTimeLeft, hoverDisplay, hoverTimerDisplay, dt);
     [isNoGapActive, noGapTimeLeft] = passoTimer(isNoGapActive, noGapTimeLeft, nogapDisplay, nogapTimerDisplay, dt);
+    passoPoderesNovos(dt);   // estrelas x2, fantasma, mola, gelo, bolha, cometas, raio, fadinha...
 
     // Tamanho (gigante / minúsculo)
     let targetW = 50, targetH = 40;
@@ -3819,7 +4038,7 @@ function step() {
     for (const p of platforms) {
         const yAnt = p.y;
         // a fase acumula com a escala de tempo: ligar/desligar a câmera lenta não "teleporta" a plataforma
-        if (p.amp) { p.faseOsc += p.velOsc * ts; p.y = p.baseY + Math.sin(p.faseOsc) * p.amp; }
+        if (p.amp && !ativo('gelo')) { p.faseOsc += p.velOsc * ts; p.y = p.baseY + Math.sin(p.faseOsc) * p.amp; }   // Congelar: param
         if (p.caindo) { p.vyQueda += 0.5 * ts; p.y += p.vyQueda * ts; }
         p.dy = p.y - yAnt;
     }
@@ -3852,7 +4071,7 @@ function step() {
                 if (p.quebradica) {
                     // nuvem de chuva pingando enquanto alguém está em cima
                     if (frames % 5 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + ESPESSURA_NUVEM - 6, vx: 0, vy: 2, gravidade: 0.25, life: 0.8, size: 2, noMundo: true, color: PALETA.gota });
-                    p.tempoPisado += ts; // conta em tempo de jogo (igual na câmera lenta)
+                    if (!ativo('gelo')) p.tempoPisado += ts; // conta em tempo de jogo (Congelar: não racha)
                     // aviso: a nuvem começa a soltar fiapos antes de cair
                     if (p.tempoPisado > 15 && frames % 4 === 0) emitirParticula({ x: p.x - distance + Math.random() * p.w, y: p.y + 10, vx: (Math.random() - 0.5) * 2, vy: 1.5, gravidade: 0.1, life: 0.6, size: 6, forma: 'poeira', noMundo: true, color: PALETA.nuvemChuva });
                     if (p.tempoPisado > 35) {
@@ -3883,6 +4102,7 @@ function step() {
             else aoPousar(topo, wasGrounded);
             continue;
         }
+        if (ativo('fantasma')) continue;   // Fantasma: atravessa obstáculos
         if ((isDashing && ob.tipo !== 'espinho') || isGiantActive || isRocketActive) { destruirObstaculo(ob); continue; }
         if (player.hurtFrames > 0) continue;
         if (isShieldActive) {
@@ -3903,6 +4123,12 @@ function step() {
     }
     // Jump buffer: pulo apertado pouco antes de pousar
     if (player.onGround && !wasGrounded && player.bufferPulo > 0) jump();
+    if (player.molaPendente) {
+        player.molaPendente = false;
+        player.vy = player.jumpPower * FORCA_MOLA; player.onGround = false; player.jumps = 1; player.coyote = 0;
+        player.scaleY = 1.3; player.sqV = 0;
+        playSound('jump'); spawnJumpParticles();
+    }
 
     pRealX = distance + player.x;
     let pCX = pRealX + player.w / 2;
@@ -3911,6 +4137,12 @@ function step() {
 
     for (let s of stars) {
         if (s.collected) continue;
+        // estrela de cometa ainda caindo do céu (com rastro)
+        if (s.cai > 0) {
+            const d = Math.min(9, s.cai); s.y += d; s.cai -= d;
+            if (frames % 2 === 0) emitirParticula({ x: s.x - distance, y: s.y - 6, vx: 0, vy: -1, life: 0.5, size: 9, forma: 'brilho', color: (s.starType || STAR_TYPES[0]).color });
+            continue;
+        }
         let dx = pCX - s.x;
         let dy = pCY - s.y;
         let dist = Math.hypot(dx, dy);
@@ -3920,33 +4152,7 @@ function step() {
             s.x += (dx / dist) * pull;
             s.y += (dy / dist) * pull;
         }
-        if (dist < player.w / 2 + s.size) {
-            s.collected = true;
-            let st = s.starType || STAR_TYPES[0];
-            let starVal = Math.round((st.value || 10) * (1 + ((unlockedUpgrades.coin_val || 0) * 0.25)));
-            starsCollected += starVal;
-            playSound('collect');
-            checkMission('stars', starVal);
-            player.sorriso = 40;
-
-            score += starVal * multiplicadorPontos();
-            let burstColor = st.glow || '#ffdd00';
-            for (let i = 0; i < 8; i++) emitirParticula({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 5, forma: 'brilho' });
-
-            aneis.push({ x: s.x - distance, y: s.y, cor: burstColor, t: 0 });   // anel que expande ao coletar
-            // "+N" do tamanho da raridade: comuns pequenos, lendárias enormes
-            const escala = starVal >= 1000 ? 1.9 : starVal >= 250 ? 1.4 : starVal >= 100 ? 1.15 : 0.8;
-            floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal.toLocaleString()}`, life: 1.0, color: burstColor, escala });
-            if (starVal >= 250) sleepFrames = 2; // micro hit-pause só nas raras (comuns em sequência travavam o jogo)
-
-            if (starVal >= 500) {
-                showToast(`${st.name}: +${starVal.toLocaleString()} ⭐`);
-                // explosão extra: mais brilhos e um anel grande
-                for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; emitirParticula({ x: s.x - distance, y: s.y, vx: Math.cos(a) * 7, vy: Math.sin(a) * 7, life: 1.2, color: st.color, size: 7, forma: 'brilho' }); }
-                aneis.push({ x: s.x - distance, y: s.y, cor: st.color, t: 0, raio: 60 });
-                screenShake = Math.max(screenShake, 6);
-            }
-        }
+        if (dist < player.w / 2 + s.size) coletarEstrela(s);
     }
 
     for (let f of feathers) {
@@ -4136,6 +4342,36 @@ function desenharParticulas(ctx) {
 }
 
 // Pouso em uma superfície (plataforma ou topo de bloco)
+// Coleta uma estrela (pelo personagem ou pela Fadinha)
+function coletarEstrela(s) {
+    s.collected = true;
+    let st = s.starType || STAR_TYPES[0];
+    let starVal = Math.round((st.value || 10) * (1 + ((unlockedUpgrades.coin_val || 0) * 0.25)));
+    if (ativo('estrelax2')) starVal *= 2;   // poder Estrelas x2
+    starsCollected += starVal;
+    playSound('collect');
+    checkMission('stars', starVal);
+    player.sorriso = 40;
+
+    score += starVal * multiplicadorPontos();
+    let burstColor = st.glow || '#ffdd00';
+    for (let i = 0; i < 8; i++) emitirParticula({ x: s.x - distance, y: s.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 1, color: burstColor, size: 5, forma: 'brilho' });
+
+    aneis.push({ x: s.x - distance, y: s.y, cor: burstColor, t: 0 });   // anel que expande ao coletar
+    // "+N" do tamanho da raridade: comuns pequenos, lendárias enormes
+    const escala = starVal >= 1000 ? 1.9 : starVal >= 250 ? 1.4 : starVal >= 100 ? 1.15 : 0.8;
+    floatingTexts.push({ x: s.x - distance, y: s.y - 15, text: `+${starVal.toLocaleString()}`, life: 1.0, color: burstColor, escala });
+    if (starVal >= 250) sleepFrames = 2; // micro hit-pause só nas raras (comuns em sequência travavam o jogo)
+
+    if (starVal >= 500) {
+        showToast(`${st.name}: +${starVal.toLocaleString()} ⭐`);
+        // explosão extra: mais brilhos e um anel grande
+        for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; emitirParticula({ x: s.x - distance, y: s.y, vx: Math.cos(a) * 7, vy: Math.sin(a) * 7, life: 1.2, color: st.color, size: 7, forma: 'brilho' }); }
+        aneis.push({ x: s.x - distance, y: s.y, cor: st.color, t: 0, raio: 60 });
+        screenShake = Math.max(screenShake, 6);
+    }
+}
+
 function aoPousar(topoY, estavaNoChao) {
     const vyImpacto = player.vy;
     const slamValido = isSlamming && vyImpacto >= VEL_MIN_SLAM;
@@ -4182,6 +4418,8 @@ function aoPousar(topoY, estavaNoChao) {
     player.y = topoY - player.h;
     player.jumps = 0;
     player.coyote = PASSOS_COYOTE;
+    // Mola: todo pouso (vindo do ar, sem ser slam) vira um quique automático
+    if (ativo('mola') && !estavaNoChao && !slamValido) player.molaPendente = true;
 }
 
 function destruirObstaculo(ob) {
@@ -4298,6 +4536,19 @@ function coletarPowerup(pu) {
             score += 5000 * pm;
            
             break;
+        case 'presente': {
+            // presente surpresa: abre um power-up aleatório (qualquer um, menos presente e relógio)
+            const opcoes = POWERUP_TYPES.filter(t => t !== 'presente' && t !== 'relogio');
+            const sorteado = opcoes[Math.floor(Math.random() * opcoes.length)];
+            score += 200 * pm;
+            setTimeout(() => { if (state === 'playing') coletarPowerup({ type: sorteado, x: pu.x, y: pu.y - 20 }); }, 350);
+            break;
+        }
+        case 'relogio':
+            // relógio: +6 s em todos os poderes ativos (sem nenhum ativo, vira pontos)
+            if (!estenderPoderes(6)) { score += 600 * pm; showToast('⏰ Nenhum poder ativo: +600 pontos'); }
+            else showToast('⏰ +6 s em todos os poderes!');
+            break;
         case 'omni':
             isMagnetActive = true; magnetTimeLeft = DURACAO_PODER.omni * pDur; magnetDisplay.classList.remove('hidden');
             isShieldActive = true; if (shieldTimeLeft < 9000) shieldTimeLeft = DURACAO_ESCUDO * pDur; shieldDisplay.classList.remove('hidden');
@@ -4310,6 +4561,7 @@ function coletarPowerup(pu) {
             for (let i = 0; i < 18; i++) emitirParticula({ x: pu.x - distance, y: pu.y, vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20, life: 1.5, color: PALETA.particulas[i % 5], size: Math.random() * 5 + 5, forma: 'brilho' });
             break;
     }
+    if (PODERES_NOVOS.includes(pu.type)) ativarPoder(pu.type, DURACAO_PODER[pu.type] * pDur);
     // estouro da bolha: anel grande + brilhos em círculo na cor do poder + o nome do poder subindo
     const est = ESTILOS_POWERUP[pu.type] || ESTILOS_POWERUP.magnet;
     const cx = pu.x - distance, cy = pu.y;
@@ -4328,7 +4580,13 @@ function coletarPowerup(pu) {
 // QUEDA, RESGATE E MORTE
 // ─────────────────────────────────────────────────────────────────────────
 function caiuNoBuraco() {
-    if (isShieldActive) {
+    if (ativo('bolha')) {
+        // Bolha: carrega o jogador de volta (gasta o poder)
+        poderes.bolha = 0.001;
+        resgatarJogador(-10, '#9BE7FF');
+        for (let i = 0; i < 12; i++) emitirParticula({ x: player.x + player.w / 2, y: player.y + player.h / 2, vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10, life: 1, size: 12, forma: 'bolha', color: '#9BE7FF' });
+        showToast('🫧 A bolha te salvou!');
+    } else if (isShieldActive) {
         isShieldActive = false; shieldTimeLeft = 0;
         shieldDisplay.classList.add('hidden');
         resgatarJogador(-8, '#44ccff');
@@ -5025,6 +5283,15 @@ function desenharPlataforma(p, ph) {
     const tremor = (p.quebradica && p.tempoPisado > 0 && !p.caindo) ? Math.sin(frames * 1.7) * 2 : 0;
     const s = canvas.width / cw;
     ctx.drawImage(img, screenX - M * k + tremor, p.y - M, img.width / s * k, img.height / s);
+    if (ativo('gelo')) {
+        // Congelar: camada de gelo por cima e pingentes embaixo
+        ctx.fillStyle = 'rgba(170,225,255,0.45)';   // toda a nuvem azulada
+        ctx.beginPath(); ctx.roundRect(screenX - 2, p.y - 2, p.w + 4, ESPESSURA_NUVEM - 10, 12); ctx.fill();
+        ctx.fillStyle = 'rgba(235,250,255,0.95)';
+        ctx.beginPath(); ctx.roundRect(screenX - 2, p.y - 3, p.w + 4, 10, 5); ctx.fill();
+        ctx.fillStyle = 'rgba(220,245,255,0.9)';
+        for (let x = screenX + 12, i = 0; x < screenX + p.w - 8; x += 22, i++) { const L = 8 + (i % 3) * 5; ctx.beginPath(); ctx.moveTo(x - 4, p.y + ESPESSURA_NUVEM - 14); ctx.lineTo(x, p.y + ESPESSURA_NUVEM - 14 + L); ctx.lineTo(x + 4, p.y + ESPESSURA_NUVEM - 14); ctx.fill(); }
+    }
 }
 
 // ── Obstáculos (cristais, cortina de aurora, bloco de cristal) ──
@@ -5224,6 +5491,7 @@ function render() {
     }
 
     desenharEfeitosPoderes(ctx);   // auras dos poderes por trás do personagem
+    desenharPoderesNovos(ctx);     // bolha, mola, estrelas x2...
 
     // Personagem e escudo (o unicórnio novo desenha antes o brilho, a fita de arco-íris e as estrelinhas)
     if (usaPersonagemNovo(player)) desenharEfeitosPersonagem(ctx, player, distance, gameSpeed, tempoRender);
@@ -5234,6 +5502,8 @@ function render() {
     else { drawUnicorn(ctx, player); }
     if (isShieldActive) drawShieldRing(ctx, player);
     desenharSelosPoderes(ctx);   // x2, canguru, trevo... sobre a cabeça + labareda do foguete
+    desenharRaios(ctx);          // poder Raio
+    desenharFada(ctx);           // poder Fadinha
 
     desenharVinhetaPoder(ctx);   // moldura colorida da câmera lenta, buraco negro, foguete...
 

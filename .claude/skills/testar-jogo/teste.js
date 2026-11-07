@@ -292,7 +292,21 @@ async function rodar() {
         floatingTexts = [];
         coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
         ok(isMagnetActive && floatingTexts.some(f => f.text === ESTILOS_POWERUP.magnet.nome), 'coletar power-up ativa e mostra o nome');
-        ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01, `duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
+        // poderes novos: todos ativam, têm pílula no HUD e não dão erro rodando
+        const errosAntesNovos = window.__erros.length;
+        for (const id of PODERES_NOVOS) coletarPowerup({ type: id, x: distance + player.x, y: player.y });
+        ok(PODERES_NOVOS.every(id => ativo(id) && !pilulaPoder(id).classList.contains('hidden')), 'poderes novos ativam e mostram a pílula');
+        player.hurtFrames = 9999; isPaused = false;
+        for (let k = 0; k < 120; k++) step();
+        isPaused = true; player.hurtFrames = 0;
+        ok(window.__erros.length === errosAntesNovos, `poderes novos rodando 2 s sem erro (${window.__erros.length - errosAntesNovos})`);
+        const st0 = starsCollected; coletarEstrela({ x: distance + player.x, y: player.y, starType: STAR_TYPES[0], collected: false });
+        ok(starsCollected - st0 === STAR_TYPES[0].value * 2 * (1 + (unlockedUpgrades.coin_val || 0) * 0.25), 'Estrelas x2 dobra o valor');
+        const tAntes = poderes.fantasma; coletarPowerup({ type: 'relogio', x: 0, y: 0 });
+        ok(poderes.fantasma > tAntes + 5.9, 'Relógio soma 6 s nos poderes ativos');
+        zerarPoderesNovos();
+        ok(!PODERES_NOVOS.some(ativo), 'reiniciar zera os poderes novos');
+        ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01,`duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);
