@@ -292,6 +292,7 @@ async function rodar() {
         floatingTexts = [];
         coletarPowerup({ type: 'magnet', x: distance + player.x, y: player.y });
         ok(isMagnetActive && floatingTexts.some(f => f.text === ESTILOS_POWERUP.magnet.nome), 'coletar power-up ativa e mostra o nome');
+        ok(magnetTimeLeft >= DURACAO_PODER.magnet - 0.01, `duração do ímã vem da tabela DURACAO_PODER (${magnetTimeLeft.toFixed(1)} s)`);
         // power-ups: o sorteio com raridade só devolve tipos que existem
         const sorteados = new Set(); for (let i = 0; i < 2000; i++) sorteados.add(sortearPowerup());
         ok([...sorteados].every(t => POWERUP_TYPES.includes(t)) && sorteados.size >= 15, `sorteio de power-ups com raridade (${sorteados.size} tipos)`);

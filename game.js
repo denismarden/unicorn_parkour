@@ -44,7 +44,12 @@ const MAX_PARTICULAS = 150;           // pool fixo reaproveitado
 const FATOR_CORRIDA = 0.11;           // velocidade das patas por unidade de velocidade do jogo
 const MAX_PASSO_CORRIDA = 0.9;        // limite para as patas não "embaralharem" em alta velocidade
 const MARGEM_ALCANCE = 0.8;           // vãos usam no máximo 80% do alcance real do personagem
-const DURACAO_ESCUDO = 15;            // s (escudo coletado como power-up)
+// Duração de cada poder (segundos, antes dos bônus de personagem e do poder "Maestria Arcana")
+const DURACAO_PODER = {
+    magnet: 15, shield: 25, bonus: 15, slowmo: 9, infjump: 18, shrink: 12, giant: 12, meteor: 12,
+    rocket: 8, blackhole: 10, lucky: 15, hover: 14, nogap: 20, voo: 18, omni: 18
+};
+const DURACAO_ESCUDO = DURACAO_PODER.shield;   // s (escudo coletado como power-up)
 const CHANCE_POWERUP = 0.06;          // por plataforma (~2 power-ups por minuto)
 const AVISO_FIM_PODER = 2;            // s: a pílula do poder pisca quando falta isto
 const ATRACAO_POWERUP = 90;          // px: a bolha do power-up é puxada até o personagem a esta distância
@@ -3949,7 +3954,7 @@ function step() {
         let dx = pCX - f.x; let dy = pCY - f.y;
         if (Math.hypot(dx, dy) < player.w / 2 + f.size) {
             f.collected = true;
-            isFlying = true; flightTimeLeft = 10.0 * (player.char.powerupDurMult || 1.0);
+            isFlying = true; flightTimeLeft = DURACAO_PODER.voo * (player.char.powerupDurMult || 1.0) * (1 + ((unlockedUpgrades.pu_time || 0) * 0.1));
             powerupDisplay.classList.remove('hidden');
             player.jumps = 0;
             player.sorriso = 60;
@@ -4200,7 +4205,7 @@ function coletarPowerup(pu) {
     checkMission('powerups', 1);
     switch (pu.type) {
         case 'magnet':
-            isMagnetActive = true; magnetTimeLeft = 8 * pDur;
+            isMagnetActive = true; magnetTimeLeft = DURACAO_PODER.magnet * pDur;
             magnetDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
@@ -4211,17 +4216,17 @@ function coletarPowerup(pu) {
             score += 80 * pm;
             break;
         case 'bonus':
-            isBonusActive = true; bonusTimeLeft = 8 * pDur;
+            isBonusActive = true; bonusTimeLeft = DURACAO_PODER.bonus * pDur;
             bonusDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'slowmo':
-            isSlowMoActive = true; slowMoTimeLeft = 5 * pDur;
+            isSlowMoActive = true; slowMoTimeLeft = DURACAO_PODER.slowmo * pDur;
             slowmoDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'infjump':
-            isInfJumpActive = true; infJumpTimeLeft = 10 * pDur;
+            isInfJumpActive = true; infJumpTimeLeft = DURACAO_PODER.infjump * pDur;
             infjumpDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
@@ -4237,35 +4242,35 @@ function coletarPowerup(pu) {
             break;
         }
         case 'shrink':
-            isShrinkActive = true; shrinkTimeLeft = 8 * pDur; shrinkDisplay.classList.remove('hidden');
+            isShrinkActive = true; shrinkTimeLeft = DURACAO_PODER.shrink * pDur; shrinkDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'giant':
-            isGiantActive = true; giantTimeLeft = 8 * pDur; giantDisplay.classList.remove('hidden');
+            isGiantActive = true; giantTimeLeft = DURACAO_PODER.giant * pDur; giantDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'meteor':
-            isMeteorActive = true; meteorTimeLeft = 8 * pDur; meteorDisplay.classList.remove('hidden');
+            isMeteorActive = true; meteorTimeLeft = DURACAO_PODER.meteor * pDur; meteorDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'rocket':
-            isRocketActive = true; rocketTimeLeft = 5 * pDur; rocketDisplay.classList.remove('hidden');
+            isRocketActive = true; rocketTimeLeft = DURACAO_PODER.rocket * pDur; rocketDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'blackhole':
-            isBlackHoleActive = true; blackholeTimeLeft = 6 * pDur; blackholeDisplay.classList.remove('hidden');
+            isBlackHoleActive = true; blackholeTimeLeft = DURACAO_PODER.blackhole * pDur; blackholeDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'lucky':
-            isLuckyActive = true; luckyTimeLeft = 8 * pDur; luckyDisplay.classList.remove('hidden');
+            isLuckyActive = true; luckyTimeLeft = DURACAO_PODER.lucky * pDur; luckyDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'hover':
-            isHoverActive = true; hoverTimeLeft = 8 * pDur; hoverDisplay.classList.remove('hidden');
+            isHoverActive = true; hoverTimeLeft = DURACAO_PODER.hover * pDur; hoverDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'nogap':
-            isNoGapActive = true; noGapTimeLeft = 15 * pDur; nogapDisplay.classList.remove('hidden');
+            isNoGapActive = true; noGapTimeLeft = DURACAO_PODER.nogap * pDur; nogapDisplay.classList.remove('hidden');
             score += 80 * pm;
             break;
         case 'coinshower':
@@ -4294,11 +4299,11 @@ function coletarPowerup(pu) {
            
             break;
         case 'omni':
-            isMagnetActive = true; magnetTimeLeft = 10 * pDur; magnetDisplay.classList.remove('hidden');
+            isMagnetActive = true; magnetTimeLeft = DURACAO_PODER.omni * pDur; magnetDisplay.classList.remove('hidden');
             isShieldActive = true; if (shieldTimeLeft < 9000) shieldTimeLeft = DURACAO_ESCUDO * pDur; shieldDisplay.classList.remove('hidden');
-            isBonusActive = true; bonusTimeLeft = 10 * pDur; bonusDisplay.classList.remove('hidden');
-            isInfJumpActive = true; infJumpTimeLeft = 10 * pDur; infjumpDisplay.classList.remove('hidden');
-            isFlying = true; flightTimeLeft = 10 * pDur; powerupDisplay.classList.remove('hidden');
+            isBonusActive = true; bonusTimeLeft = DURACAO_PODER.omni * pDur; bonusDisplay.classList.remove('hidden');
+            isInfJumpActive = true; infJumpTimeLeft = DURACAO_PODER.infjump * pDur; infjumpDisplay.classList.remove('hidden');
+            isFlying = true; flightTimeLeft = DURACAO_PODER.omni * pDur; powerupDisplay.classList.remove('hidden');
             player.jumps = 0;
             score += 1000 * pm;
            
